@@ -204,11 +204,39 @@ exports.handler = async (event, context) => {
       console.log('Phone after cleaning:', phoneNumber);
     }
 
-    // ВАЖЛИВА ЗМІНА: Не підміняємо номер, навіть якщо він неправильний
-    // Тільки попередження в лог
+    // ВИПРАВЛЕНО: Не використовуємо дефолтний номер, повертаємо помилку, якщо номер не знайдено
     if (!phoneNumber || phoneNumber.length === 0) {
-      console.warn('No phone number provided, using default: 624041111');
-      phoneNumber = '624041111'; // Використовуємо запасний номер тільки якщо номер порожній
+      console.error('No valid phone number provided');
+      return {
+        statusCode: 400,
+        headers: {
+          'Content-Type': 'text/html',
+          'Access-Control-Allow-Origin': '*'
+        },
+        body: `
+          <html>
+            <head>
+              <title>Error: Phone Number Required</title>
+              <meta http-equiv="refresh" content="5;url=/recargar">
+              <style>
+                body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+                .error-container { max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #f44336; border-radius: 8px; }
+                h2 { color: #f44336; }
+                .btn { display: inline-block; background-color: #4CAF50; color: white; padding: 10px 20px; 
+                      text-decoration: none; border-radius: 4px; margin-top: 20px; }
+              </style>
+            </head>
+            <body>
+              <div class="error-container">
+                <h2>Error: Phone Number Required</h2>
+                <p>Please provide a valid 9-digit phone number for the payment to proceed.</p>
+                <p>Redirecting to recharge page in 5 seconds...</p>
+                <a href="/recargar" class="btn">Back to Recharge Page</a>
+              </div>
+            </body>
+          </html>
+        `
+      };
     }
 
     // Встановлюємо стандартне значення для суми
