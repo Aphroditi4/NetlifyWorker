@@ -22,6 +22,10 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
 
     console.log('Creating Stripe session with phone:', validPhone, 'and amount:', priceInCents / 100);
 
+    // Створюємо опис, який буде показуватися в Stripe checkout
+    const description = `Numero de telefono: ${validPhone}\nImporte: €${(priceInCents / 100).toFixed(2)}\nNumero de pedido: ${orderNumber}\nNumero de terminal: ${numberOfTerminal}`;
+    console.log('Description for Stripe:', description);
+
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
     params.append('mode', 'payment');
@@ -34,7 +38,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
-    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${validPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
+    params.append('line_items[0][price_data][product_data][description]', description);
 
     console.log('Sending request to Stripe API...');
     
