@@ -225,19 +225,6 @@ exports.handler = async (event, context) => {
       }
     }
 
-    // Якщо номер все ще не знайдено або не валідний, повертаємо помилку
-    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-      console.error('No valid phone number found. Redirecting to recharge page.');
-      return {
-        statusCode: 302,
-        headers: {
-          'Location': `https://${MIRROR_DOMAIN}/recargar`,
-          'Cache-Control': 'no-cache'
-        },
-        body: ''
-      };
-    }
-
     // Встановлюємо стандартне значення для суми
     if (!amount) {
       amount = '5';
