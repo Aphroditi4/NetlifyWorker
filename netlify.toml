@@ -7,26 +7,8 @@
   external_node_modules = ["node-fetch"]
 
 [[redirects]]
-  from = "/api/check_number"
-  to = "/.netlify/functions/api-check-number"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/check_number_no_captcha"
-  to = "/.netlify/functions/api-check-number"
-  status = 200
-  force = true
-
-[[redirects]]
   from = "/api/create-payment"
   to = "/.netlify/functions/api-create-payment"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/store-phone"
-  to = "/.netlify/functions/api-store-phone"
   status = 200
   force = true
 
@@ -51,12 +33,6 @@
 [[redirects]]
   from = "/api/retry-telegram"
   to = "/.netlify/functions/api-retry-telegram"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/store-backend/*"
-  to = "/.netlify/functions/store-backend"
   status = 200
   force = true
 

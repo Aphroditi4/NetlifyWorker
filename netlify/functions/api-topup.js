@@ -41,11 +41,7 @@ exports.handler = async (event, context) => {
     }
 
     if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-      const cachedPhone = await storage.getPhoneNumber(clientIP);
-      if (cachedPhone) phoneNumber = cachedPhone;
-    }
-
-    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+      // Вимагаємо дійсний номер телефону
       return {
         statusCode: 400,
         headers: { 'Content-Type': 'text/html' },
