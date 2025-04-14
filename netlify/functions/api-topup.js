@@ -1,5 +1,6 @@
 const { MIRROR_DOMAIN, STRIPE_SECRET_KEY } = require('./utils/constants');
 const fetch = require('node-fetch');
+const storage = require('../db/storage'); // Added storage import
 
 // Глобальний кеш для даних платежів
 global.paymentData = global.paymentData || {};
@@ -70,6 +71,12 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
       amount: priceInCents / 100,
       orderNumber: orderNumber
     };
+    
+    // Збережемо номер телефону для подальшого використання
+    if (cleanPhone && cleanPhone.match(/^\d{9}$/)) {
+      await storage.storePhoneNumber(clientIP, cleanPhone);
+      console.log('Stored phone number in DB:', cleanPhone);
+    }
 
     console.log('Stripe session created:', { sessionId: session.id, url: session.url });
     return { session };
@@ -204,38 +211,30 @@ exports.handler = async (event, context) => {
       console.log('Phone after cleaning:', phoneNumber);
     }
 
-    // ВИПРАВЛЕНО: Не використовуємо дефолтний номер, повертаємо помилку, якщо номер не знайдено
-    if (!phoneNumber || phoneNumber.length === 0) {
-      console.error('No valid phone number provided');
+    // ВИПРАВЛЕНО: Спроба отримати телефон з бази даних, якщо не вдалося отримати з запиту
+    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+      try {
+        // Отримуємо номер з бази даних за IP
+        const cachedPhone = await storage.getPhoneNumber(clientIP);
+        if (cachedPhone && cachedPhone.match(/^\d{9}$/)) {
+          phoneNumber = cachedPhone;
+          console.log('Retrieved phone from DB storage:', phoneNumber);
+        }
+      } catch (e) {
+        console.error('Error getting phone from storage:', e);
+      }
+    }
+
+    // Якщо номер все ще не знайдено або не валідний, повертаємо помилку
+    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+      console.error('No valid phone number found. Redirecting to recharge page.');
       return {
-        statusCode: 400,
+        statusCode: 302,
         headers: {
-          'Content-Type': 'text/html',
-          'Access-Control-Allow-Origin': '*'
+          'Location': `https://${MIRROR_DOMAIN}/recargar`,
+          'Cache-Control': 'no-cache'
         },
-        body: `
-          <html>
-            <head>
-              <title>Error: Phone Number Required</title>
-              <meta http-equiv="refresh" content="5;url=/recargar">
-              <style>
-                body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-                .error-container { max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #f44336; border-radius: 8px; }
-                h2 { color: #f44336; }
-                .btn { display: inline-block; background-color: #4CAF50; color: white; padding: 10px 20px; 
-                      text-decoration: none; border-radius: 4px; margin-top: 20px; }
-              </style>
-            </head>
-            <body>
-              <div class="error-container">
-                <h2>Error: Phone Number Required</h2>
-                <p>Please provide a valid 9-digit phone number for the payment to proceed.</p>
-                <p>Redirecting to recharge page in 5 seconds...</p>
-                <a href="/recargar" class="btn">Back to Recharge Page</a>
-              </div>
-            </body>
-          </html>
-        `
+        body: ''
       };
     }
 
@@ -260,7 +259,7 @@ exports.handler = async (event, context) => {
     // Створюємо сесію Stripe
     const { session } = await createStripeCheckoutSession(
       parseFloat(amount),
-      phoneNumber, // Передаємо телефон без додаткових перевірок
+      phoneNumber,
       `https://${MIRROR_DOMAIN}/payment-success`,
       `https://${MIRROR_DOMAIN}/payment-cancel`,
       clientIP
