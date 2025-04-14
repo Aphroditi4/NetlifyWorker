@@ -6,24 +6,21 @@ global.paymentInfo = global.paymentInfo || {};
 
 async function createStripeCheckoutSession(amount, phoneNumber, successUrl, cancelUrl, clientIP) {
   try {
+    // КРИТИЧНО ВАЖЛИВО: Зберігаємо вхідний номер телефону в оригінальному вигляді
+    console.log('Phone number received by createStripeCheckoutSession:', phoneNumber);
+    
     const stripeUrl = 'https://api.stripe.com/v1/checkout/sessions';
     const priceInCents = Math.round(parseFloat(amount) * 100);
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    // Гарантуємо, що телефон - це рядок
-    phoneNumber = String(phoneNumber || '');
+    // Просто використовуємо номер телефону як є, без будь-яких перевірок
+    // УВАГА: Не використовуємо дефолтний номер, навіть якщо формат невірний
+    // Видаляємо тільки нецифрові символи
+    const cleanPhone = String(phoneNumber || '').replace(/\D/g, '');
     
-    // Перевіряємо формат номера телефону та видаляємо нецифрові символи
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    
-    // Accept any phone number passed from the API, only use default as a last resort
-    const validPhone = cleanPhone ? cleanPhone : '624048596';
-
-    console.log('Creating Stripe session with phone:', validPhone, 'and amount:', priceInCents / 100);
-
-    // Створюємо опис, який буде показуватися в Stripe checkout
-    const description = `Numero de telefono: ${validPhone}\nImporte: €${(priceInCents / 100).toFixed(2)}\nNumero de pedido: ${orderNumber}\nNumero de terminal: ${numberOfTerminal}`;
+    // Створюємо опис платежу
+    const description = `Numero de telefono: ${cleanPhone}\nImporte: €${(priceInCents / 100).toFixed(2)}\nNumero de pedido: ${orderNumber}\nNumero de terminal: ${numberOfTerminal}`;
     console.log('Description for Stripe:', description);
 
     const params = new URLSearchParams();
@@ -64,7 +61,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
 
     // Зберігаємо дані платежу
     global.paymentInfo[session.id] = {
-      phoneNumber: validPhone,
+      phoneNumber: cleanPhone,  // Зберігаємо очищений номер
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber
