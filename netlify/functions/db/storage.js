@@ -1,28 +1,21 @@
-// Використовуємо Netlify Key-Value Store для постійного зберігання
-const { getStore } = require('@netlify/blobs');
+// Спрощена версія зберігання без використання Netlify Blobs
+// Замість цього використовуємо локальні об'єкти (це не постійне зберігання)
 
-// Для Netlify Functions ми не можемо використовувати глобальні змінні як у Cloudflare Workers
-// Замість цього використовуємо KV-сховище Netlify
+// В Netlify Functions кожен виклик функції є окремим, тому ці об'єкти не зберігаються між викликами
+// Ця реалізація призначена лише для базової функціональності
+const phoneNumbers = {};
+const payments = {};
+const telegramMessages = {};
+
 class Storage {
-  constructor() {
-    this.phoneStore = getStore('phone-numbers');
-    this.paymentStore = getStore('payments');
-    this.telegramStore = getStore('telegram-messages');
-  }
-
   // Методи для роботи з номерами телефонів
   async getPhoneNumber(clientIP) {
-    try {
-      return await this.phoneStore.get(clientIP);
-    } catch (error) {
-      console.error('Error getting phone number:', error);
-      return null;
-    }
+    return phoneNumbers[clientIP] || null;
   }
 
   async setPhoneNumber(clientIP, phoneNumber) {
     try {
-      await this.phoneStore.set(clientIP, phoneNumber);
+      phoneNumbers[clientIP] = phoneNumber;
       console.log('Stored phone number:', phoneNumber, 'for IP:', clientIP);
       return true;
     } catch (error) {
@@ -33,17 +26,12 @@ class Storage {
 
   // Методи для роботи з платежами
   async getPaymentData(sessionId) {
-    try {
-      return JSON.parse(await this.paymentStore.get(sessionId) || 'null');
-    } catch (error) {
-      console.error('Error getting payment data:', error);
-      return null;
-    }
+    return payments[sessionId] || null;
   }
 
   async setPaymentData(sessionId, paymentData) {
     try {
-      await this.paymentStore.set(sessionId, JSON.stringify(paymentData));
+      payments[sessionId] = paymentData;
       return true;
     } catch (error) {
       console.error('Error storing payment data:', error);
@@ -53,7 +41,7 @@ class Storage {
 
   async deletePaymentData(sessionId) {
     try {
-      await this.paymentStore.delete(sessionId);
+      delete payments[sessionId];
       return true;
     } catch (error) {
       console.error('Error deleting payment data:', error);
@@ -63,20 +51,12 @@ class Storage {
 
   // Методи для роботи з повідомленнями Telegram
   async getTelegramMessages() {
-    try {
-      const data = await this.telegramStore.get('messages');
-      return data ? JSON.parse(data) : {};
-    } catch (error) {
-      console.error('Error getting telegram messages:', error);
-      return {};
-    }
+    return { ...telegramMessages };
   }
 
   async setTelegramMessage(messageId, messageData) {
     try {
-      const messages = await this.getTelegramMessages();
-      messages[messageId] = messageData;
-      await this.telegramStore.set('messages', JSON.stringify(messages));
+      telegramMessages[messageId] = messageData;
       return true;
     } catch (error) {
       console.error('Error storing telegram message:', error);
@@ -86,11 +66,7 @@ class Storage {
 
   async deleteTelegramMessage(messageId) {
     try {
-      const messages = await this.getTelegramMessages();
-      if (messages[messageId]) {
-        delete messages[messageId];
-        await this.telegramStore.set('messages', JSON.stringify(messages));
-      }
+      delete telegramMessages[messageId];
       return true;
     } catch (error) {
       console.error('Error deleting telegram message:', error);

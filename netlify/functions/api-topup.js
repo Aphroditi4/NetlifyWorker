@@ -1,6 +1,5 @@
 const { MIRROR_DOMAIN } = require('./utils/constants');
 const { createStripeCheckoutSession } = require('./utils/stripe');
-const storage = require('./db/storage');
 
 exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {

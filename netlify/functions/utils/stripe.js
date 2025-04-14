@@ -1,5 +1,4 @@
 const { STRIPE_SECRET_KEY, MIRROR_DOMAIN } = require('./constants');
-const storage = require('../db/storage');
 const fetch = require('node-fetch');
 
 async function createStripeCheckoutSession(amount, phoneNumber, successUrl, cancelUrl, clientIP) {
@@ -8,13 +7,6 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const priceInCents = Math.round(parseFloat(amount) * 100);
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
-
-    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-      if (clientIP) {
-        const cachedPhone = await storage.getPhoneNumber(clientIP);
-        if (cachedPhone) phoneNumber = cachedPhone;
-      }
-    }
 
     const validPhone = (phoneNumber && phoneNumber.match(/^\d{9}$/)) ? phoneNumber : '624048596';
 
@@ -57,12 +49,15 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
 
     const session = await response.json();
 
-    await storage.setPaymentData(session.id, {
+    // Зберігаємо дані платежу в глобальній змінній
+    // Це не постійне зберігання, але для простоти можна використовувати
+    global.paymentInfo = global.paymentInfo || {};
+    global.paymentInfo[session.id] = {
       phoneNumber: validPhone,
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber
-    });
+    };
 
     console.log('Stripe session created:', { sessionId: session.id, url: session.url });
     return { session };

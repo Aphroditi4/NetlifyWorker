@@ -1,6 +1,5 @@
 const { MIRROR_DOMAIN } = require('./utils/constants');
 const { createStripeCheckoutSession } = require('./utils/stripe');
-const storage = require('./db/storage');
 
 exports.handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -39,13 +38,6 @@ exports.handler = async (event, context) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ error: 'Unsupported content type' })
       };
-    }
-
-    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-      const cachedPhone = await storage.getPhoneNumber(clientIP);
-      if (cachedPhone) {
-        phoneNumber = cachedPhone;
-      }
     }
 
     if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {

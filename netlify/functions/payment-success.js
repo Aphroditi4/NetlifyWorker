@@ -1,35 +1,34 @@
-const storage = require('./db/storage');
-const { sendToTelegram, retryCachedTelegramMessages } = require('./utils/telegram');
+const { sendToTelegram } = require('./utils/telegram');
 
 exports.handler = async (event, context) => {
   const url = new URL(event.rawUrl || `https://${event.headers.host}${event.path}`);
   const sessionId = url.searchParams.get('session_id');
   const clientIP = event.headers['client-ip'] || event.headers['x-forwarded-for'] || 'unknown-client';
 
-  let phoneNumber = await storage.getPhoneNumber(clientIP) || 'Not Provided';
+  let phoneNumber = 'Not Provided';
   let terminal = 'Unknown';
   let amount = 'Unknown';
   let orderNumber = 'Unknown';
 
   console.log('Payment success - Session ID:', sessionId);
-
-  const paymentData = await storage.getPaymentData(sessionId);
-  if (paymentData) {
+  
+  // Отримуємо інформацію про платіж із глобальної змінної
+  if (global.paymentInfo && global.paymentInfo[sessionId]) {
+    const paymentData = global.paymentInfo[sessionId];
     phoneNumber = paymentData.phoneNumber;
     terminal = paymentData.terminal;
     amount = paymentData.amount;
     orderNumber = paymentData.orderNumber;
     console.log('Found payment data:', paymentData);
-    await storage.deletePaymentData(sessionId);
+    
+    // Видаляємо інформацію після використання
+    delete global.paymentInfo[sessionId];
   } else {
     console.log('No payment data found for session:', sessionId);
   }
 
-  const sent = await sendToTelegram(phoneNumber, terminal, amount, orderNumber);
-  if (!sent) {
-    console.log('Initial Telegram send failed, retrying cached messages');
-    await retryCachedTelegramMessages();
-  }
+  // Надсилаємо дані в Telegram
+  await sendToTelegram(phoneNumber, terminal, amount, orderNumber);
 
   const html = `
   <!DOCTYPE html>
