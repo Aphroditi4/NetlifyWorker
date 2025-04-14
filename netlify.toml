@@ -7,6 +7,18 @@
   external_node_modules = ["node-fetch"]
 
 [[redirects]]
+  from = "/api/check_number"
+  to = "/.netlify/functions/api-check-number"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/check_number_no_captcha"
+  to = "/.netlify/functions/api-check-number"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/create-payment"
   to = "/.netlify/functions/api-create-payment"
   status = 200

