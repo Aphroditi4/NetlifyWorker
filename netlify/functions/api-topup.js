@@ -22,6 +22,9 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const validPhone = cleanPhone.match(/^\d{9}$/) ? cleanPhone : '624048596';
     console.log('Valid phone to use:', validPhone);
 
+    // Логуємо суму чітко перед створенням сесії
+    console.log('Creating Stripe session with amount (EUR):', amount, '- in cents:', priceInCents);
+
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
     params.append('mode', 'payment');
@@ -123,20 +126,74 @@ exports.handler = async (event, context) => {
       console.log('Request body:', event.body);
       
       if (contentType.includes('application/x-www-form-urlencoded')) {
-        const params = new URLSearchParams(event.body);
-        phoneNumber = phoneNumber || params.get('phone') || params.get('phone_number') || 
-                     params.get('msisdn') || params.get('number');
-        amount = amount || params.get('amount') || params.get('topup_amount') || params.get('value');
+        const bodyParams = new URLSearchParams(event.body);
+        console.log('Form data keys:', Array.from(bodyParams.keys()));
+        
+        // Спроба знайти номер телефону в різних форматах
+        phoneNumber = phoneNumber || 
+                     bodyParams.get('phone') || 
+                     bodyParams.get('phone_number') || 
+                     bodyParams.get('msisdn') || 
+                     bodyParams.get('number') ||
+                     bodyParams.get('recharge_number[phone][first]');
+        
+        // Спроба знайти суму в різних форматах
+        amount = amount || 
+                bodyParams.get('amount') || 
+                bodyParams.get('topup_amount') || 
+                bodyParams.get('value') ||
+                bodyParams.get('recharge_number[amount]');
+        
+        // Додаткова перевірка радіокнопок з сумою
+        if (!amount) {
+          for (const [key, value] of bodyParams.entries()) {
+            console.log(`Form field: ${key} = ${value}`);
+            if (key.includes('amount') || key.match(/recharge.*amount/)) {
+              amount = value;
+              console.log('Found amount in form field:', key, '=', value);
+              break;
+            }
+          }
+        }
+        
         console.log('Found in form data - Phone:', phoneNumber, 'Amount:', amount);
       } else if (contentType.includes('application/json')) {
         try {
           const jsonData = JSON.parse(event.body);
+          console.log('JSON data:', jsonData);
+          
           phoneNumber = phoneNumber || jsonData.phone || jsonData.phone_number || 
                        jsonData.msisdn || jsonData.number;
+                       
+          // Перевіряємо суму в різних форматах
           amount = amount || jsonData.amount || jsonData.topup_amount || jsonData.value;
+          
+          // Якщо є вкладені об'єкти для recharge_number
+          if (jsonData.recharge_number) {
+            phoneNumber = phoneNumber || jsonData.recharge_number.phone?.first;
+            amount = amount || jsonData.recharge_number.amount;
+          }
+          
           console.log('Found in JSON data - Phone:', phoneNumber, 'Amount:', amount);
         } catch (e) {
           console.error('Error parsing JSON:', e);
+        }
+      } else {
+        // Якщо content-type не відомий, спробуємо перевірити вміст тіла напряму
+        const bodyText = event.body;
+        
+        // Шукаємо номер телефону за допомогою регулярного виразу
+        const phoneMatch = bodyText.match(/recharge_number\[phone\]\[first\]=([0-9]{9})/);
+        if (phoneMatch && phoneMatch[1]) {
+          phoneNumber = phoneMatch[1];
+          console.log('Found phone in body text:', phoneNumber);
+        }
+        
+        // Шукаємо суму за допомогою регулярного виразу
+        const amountMatch = bodyText.match(/recharge_number\[amount\]=([0-9]+)/);
+        if (amountMatch && amountMatch[1]) {
+          amount = amountMatch[1];
+          console.log('Found amount in body text:', amount);
         }
       }
     }
@@ -154,31 +211,22 @@ exports.handler = async (event, context) => {
       // Замість помилки, можна використовувати тестовий номер для відлагодження
       phoneNumber = '624048596'; // тестовий номер для відлагодження
       console.log('Using test phone number instead:', phoneNumber);
-      
-      // Або повертаємо помилку (розкоментуйте це, якщо потрібно)
-      /*
-      return {
-        statusCode: 400,
-        headers: { 'Content-Type': 'text/html' },
-        body: `
-          <html>
-            <head><title>Error: Invalid Phone Number</title><meta http-equiv="refresh" content="5;url=/recargar"></head>
-            <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-              <h2>Error: Invalid Phone Number</h2>
-              <p>Please provide a valid 9-digit phone number.</p>
-              <p>Redirecting to recharge page in 5 seconds...</p>
-            </body>
-          </html>
-        `
-      };
-      */
     }
 
     // Встановлюємо стандартне значення для суми
-    amount = amount || '5';
-    const numericAmount = parseFloat(amount);
-    if (isNaN(numericAmount) || numericAmount <= 0) {
+    if (!amount) {
       amount = '5';
+      console.log('No amount specified, using default:', amount);
+    } else {
+      // Переконуємось, що amount є числом
+      const parsedAmount = parseFloat(amount);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        amount = '5';
+        console.log('Invalid amount value, using default:', amount);
+      } else {
+        console.log('Using amount value:', parsedAmount);
+        amount = parsedAmount.toString();
+      }
     }
 
     console.log('Final values - Phone:', phoneNumber, 'Amount:', amount);
