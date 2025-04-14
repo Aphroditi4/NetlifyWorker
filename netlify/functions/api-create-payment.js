@@ -20,27 +20,27 @@ exports.handler = async (event, context) => {
     let amount, phoneNumber, successUrl, cancelUrl;
     const clientIP = event.headers['client-ip'] || event.headers['x-forwarded-for'] || 'unknown-client';
 
-    console.log('api-create-payment called, body:', event.body);
-    console.log('Content-Type:', contentType);
+    console.log('api-create-payment called, content-type:', contentType);
 
     if (contentType.includes('application/json')) {
       try {
         const data = JSON.parse(event.body);
+        console.log('Payment request body (JSON):', data);
         amount = data.amount;
         phoneNumber = data.phoneNumber;
         successUrl = data.successUrl || `https://www.digimobil.es/`;
         cancelUrl = data.cancelUrl || `https://${MIRROR_DOMAIN}/payment-cancel`;
-        console.log('JSON data:', data);
       } catch (e) {
         console.error('Error parsing JSON:', e);
       }
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
       const params = new URLSearchParams(event.body);
-      amount = params.get('amount');
       phoneNumber = params.get('phoneNumber');
+      amount = params.get('amount');
       successUrl = params.get('successUrl') || `https://${MIRROR_DOMAIN}/payment-success`;
       cancelUrl = params.get('cancelUrl') || `https://${MIRROR_DOMAIN}/payment-cancel`;
-      console.log('Form data:', Object.fromEntries(params));
+      console.log('Payment request parameters:', 
+        Object.fromEntries(params.entries()));
     } else {
       return {
         statusCode: 400,
@@ -49,13 +49,22 @@ exports.handler = async (event, context) => {
       };
     }
 
+    // Виводимо отримані дані
+    console.log('Payment request extracted data:', {
+      phoneNumber,
+      amount,
+      successUrl,
+      cancelUrl,
+      clientIP
+    });
+
     // Гарантуємо, що телефон - це рядок і очищаємо від нецифрових символів
     phoneNumber = String(phoneNumber || '').replace(/\D/g, '');
-    console.log('Clean phone number:', phoneNumber);
+    console.log('Phone after cleaning:', phoneNumber);
 
-    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-      console.log('Invalid phone number, using default');
-      phoneNumber = '624048596'; // Використовуємо тестовий номер для відлагодження
+    if (!phoneNumber || phoneNumber.length === 0) {
+      console.log('No phone number provided, using default');
+      phoneNumber = '624041199'; // Вказуємо номер за замовчуванням тільки якщо номер порожній
     }
 
     if (!amount || isNaN(parseFloat(amount))) {
@@ -63,7 +72,7 @@ exports.handler = async (event, context) => {
       amount = '5';
     }
 
-    console.log('Processing payment request:', { amount, phoneNumber, clientIP });
+    console.log('Final payment request:', { amount, phoneNumber, clientIP });
 
     const { session } = await createStripeCheckoutSession(
       parseFloat(amount),

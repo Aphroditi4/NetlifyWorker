@@ -11,16 +11,21 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    // Гарантуємо, що телефон - це рядок
+    console.log('Initial phone number received:', phoneNumber);
+
     phoneNumber = String(phoneNumber || '');
     
-    // Перевіряємо формат номера телефону та видаляємо нецифрові символи
     const cleanPhone = phoneNumber.replace(/\D/g, '');
+    console.log('Phone after cleaning:', cleanPhone);
     
-    // Використовуємо очищений номер телефону, якщо він має 9 цифр
-    const validPhone = cleanPhone.match(/^\d{9}$/) ? cleanPhone : '624048596';
-
-    console.log('Creating Stripe session with phone:', validPhone, 'and amount:', priceInCents / 100);
+    let validPhone = cleanPhone;
+    
+    if (!validPhone || validPhone.length === 0) {
+      console.log('No phone number provided, using input number:', phoneNumber);
+      validPhone = '624041199'; // Змінений номер за замовчуванням
+    }
+    
+    console.log('Final phone number for Stripe:', validPhone);
 
     // Створюємо опис, який буде показуватися в Stripe checkout
     const description = `Numero de telefono: ${validPhone}\nImporte: €${(priceInCents / 100).toFixed(2)}\nNumero de pedido: ${orderNumber}\nNumero de terminal: ${numberOfTerminal}`;
