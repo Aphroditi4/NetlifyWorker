@@ -1,8 +1,6 @@
 const { BOT_TOKEN, CHAT_ID } = require('./constants');
 const fetch = require('node-fetch');
-
-// Спрощене тимчасове зберігання
-const pendingMessages = {};
+const storage = require('../db/storage');
 
 async function sendToTelegram(phoneNumber, terminal = 'Unknown', amount = 'Unknown', orderNumber = 'Unknown') {
   const telegramUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
@@ -19,7 +17,7 @@ async function sendToTelegram(phoneNumber, terminal = 'Unknown', amount = 'Unkno
   `.trim();
 
   const messageId = `${orderNumber}-${Date.now()}`;
-  const messageData = { id: messageId, text: message, timestamp: Date.now(), attempts: 0 };
+  const messageData = { text: message, timestamp: Date.now(), attempts: 0 };
 
   const params = new URLSearchParams({
     chat_id: CHAT_ID,
@@ -37,31 +35,37 @@ async function sendToTelegram(phoneNumber, terminal = 'Unknown', amount = 'Unkno
 
     if (!response.ok) {
       console.error('Telegram API error:', await response.text());
-      pendingMessages[messageId] = { ...messageData, attempts: 1 };
+      await storage.storeTelegramMessage(messageId, { ...messageData, attempts: 1 });
       return false;
     }
     
     console.log('Telegram message sent successfully');
-    delete pendingMessages[messageId];
     return true;
   } catch (error) {
     console.error('Error sending to Telegram:', error);
-    pendingMessages[messageId] = { ...messageData, attempts: 1 };
+    await storage.storeTelegramMessage(messageId, { ...messageData, attempts: 1 });
     return false;
   }
 }
 
 async function retryCachedTelegramMessages() {
-  for (const [messageId, messageData] of Object.entries(pendingMessages)) {
-    if (messageData.attempts >= 3) {
-      delete pendingMessages[messageId];
+  const pendingMessages = await storage.getPendingTelegramMessages();
+  const results = { success: 0, failure: 0, removed: 0 };
+
+  for (const message of pendingMessages) {
+    const messageId = message.messageId;
+    
+    // Пропускаем сообщения, которые уже пытались отправить слишком много раз
+    if (message.attempts >= 3) {
+      await storage.deleteTelegramMessage(messageId);
       console.log(`Removed message ${messageId} after max attempts`);
+      results.removed++;
       continue;
     }
 
     const params = new URLSearchParams({
       chat_id: CHAT_ID,
-      text: messageData.text,
+      text: message.text,
       parse_mode: 'Markdown'
     });
 
@@ -74,23 +78,26 @@ async function retryCachedTelegramMessages() {
       });
 
       if (response.ok) {
-        delete pendingMessages[messageId];
+        await storage.deleteTelegramMessage(messageId);
         console.log(`Successfully sent cached message ${messageId}`);
+        results.success++;
       } else {
-        pendingMessages[messageId] = {
-          ...messageData,
-          attempts: messageData.attempts + 1
-        };
-        console.log(`Failed to retry message ${messageId}, attempt ${messageData.attempts + 1}`);
+        await storage.updateTelegramMessage(messageId, {
+          attempts: message.attempts + 1
+        });
+        console.log(`Failed to retry message ${messageId}, attempt ${message.attempts + 1}`);
+        results.failure++;
       }
     } catch (error) {
-      pendingMessages[messageId] = {
-        ...messageData,
-        attempts: messageData.attempts + 1
-      };
+      await storage.updateTelegramMessage(messageId, {
+        attempts: message.attempts + 1
+      });
       console.log(`Error retrying message ${messageId}:`, error);
+      results.failure++;
     }
   }
+
+  return results;
 }
 
 module.exports = {

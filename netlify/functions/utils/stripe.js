@@ -1,10 +1,10 @@
 const { STRIPE_SECRET_KEY } = require('./constants');
 const fetch = require('node-fetch');
+const storage = require('../db/storage');
 
-// Абсолютно спрощена версія функції створення сесії Stripe
 async function createStripeCheckoutSession(amount, phoneNumber, successUrl, cancelUrl, clientIP) {
   try {
-    // Виводимо всі вхідні параметри для діагностики
+    // Выводим все входные параметры для диагностики
     console.log('[STRIPE] INPUT:', {
       amount: amount,
       phoneNumber: phoneNumber,
@@ -13,20 +13,21 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
       clientIP: clientIP
     });
 
-    // Спрощена обробка даних
+    // Обработка данных
     const stripeUrl = 'https://api.stripe.com/v1/checkout/sessions';
     const priceInCents = Math.round(parseFloat(amount) * 100);
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    // Ми навмисно не робимо жодної перевірки або зміни номера телефону
-    console.log('[STRIPE] Using phone:', phoneNumber);
+    // Очистка номера телефона (убедимся, что это строка и уберем нецифровые символы)
+    const cleanPhone = String(phoneNumber || '').replace(/\D/g, '');
+    console.log('[STRIPE] Using phone:', cleanPhone, 'Original:', phoneNumber);
 
-    // Формуємо опис платежу
-    const description = `Numero de telefono: ${phoneNumber}\nImporte: €${(priceInCents / 100).toFixed(2)}\nNumero de pedido: ${orderNumber}\nNumero de terminal: ${numberOfTerminal}`;
+    // Формируем описание платежа
+    const description = `Numero de telefono: ${cleanPhone}\nImporte: €${(priceInCents / 100).toFixed(2)}\nNumero de pedido: ${orderNumber}\nNumero de terminal: ${numberOfTerminal}`;
     console.log('[STRIPE] Description:', description);
 
-    // Підготовка запиту до Stripe
+    // Подготовка запроса к Stripe
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
     params.append('mode', 'payment');
@@ -41,7 +42,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
     params.append('line_items[0][price_data][product_data][description]', description);
 
-    // Відправляємо запит до Stripe
+    // Отправляем запрос к Stripe
     console.log('[STRIPE] Sending request to API...');
     
     const response = await fetch(stripeUrl, {
@@ -53,7 +54,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
       body: params.toString()
     });
 
-    // Обробляємо відповідь
+    // Обрабатываем ответ
     const responseText = await response.text();
     console.log('[STRIPE] Response status:', response.status);
     
@@ -62,18 +63,17 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
       throw new Error(`Stripe API error: ${response.status} - ${responseText}`);
     }
 
-    // Парсимо відповідь
+    // Парсим ответ
     const session = JSON.parse(responseText);
     console.log('[STRIPE] Session created:', session.id);
 
-    // Зберігаємо довідкові дані сесії 
-    global.paymentInfo = global.paymentInfo || {};
-    global.paymentInfo[session.id] = {
-      phoneNumber: phoneNumber,
+    // Сохраняем данные платежа в базу данных
+    await storage.storePaymentData(session.id, {
+      phoneNumber: cleanPhone,
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber
-    };
+    });
     console.log('[STRIPE] Stored payment info for session:', session.id);
 
     return { session };

