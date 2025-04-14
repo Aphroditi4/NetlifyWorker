@@ -19,7 +19,6 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     console.log('Clean phone number:', cleanPhone, 'Original:', phoneNumber);
     
     // НАЙВАЖЛИВІША ЗМІНА: Ніколи не підміняємо номер телефону
-    // Прибираємо перевірку, яка замінювала номер на 624048596
     console.log('Using phone for payment:', cleanPhone);
 
     // Логуємо суму чітко перед створенням сесії
