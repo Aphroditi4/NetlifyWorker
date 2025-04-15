@@ -46,17 +46,12 @@ exports.handler = async function(event, context) {
       try {
         const data = JSON.parse(event.body);
         const phoneNumber = data.phoneNumber;
-        if (phoneNumber && phoneNumber.match(/^\d{9}$/)) {
-          await storage.storePhoneNumber(clientIP, phoneNumber);
-          console.log('Stored phone number:', phoneNumber, 'for IP:', clientIP);
-          return {
-            statusCode: 200,
-            body: JSON.stringify({ success: true, message: 'Phone number stored' })
-          };
-        }
+        // Удалена валидация номера телефона
+        await storage.storePhoneNumber(clientIP, phoneNumber);
+        console.log('Stored phone number:', phoneNumber, 'for IP:', clientIP);
         return {
-          statusCode: 400,
-          body: JSON.stringify({ success: false, message: 'Invalid phone number' })
+          statusCode: 200,
+          body: JSON.stringify({ success: true, message: 'Phone number stored' })
         };
       } catch (e) {
         console.error('Error storing phone:', e);
@@ -147,20 +142,15 @@ exports.handler = async function(event, context) {
           };
         }
 
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+        // Если номер телефона не найден, пытаемся получить из кэша, без валидации
+        if (!phoneNumber) {
           const cachedPhone = await storage.getPhoneNumber(clientIP);
           if (cachedPhone) {
             phoneNumber = cachedPhone;
           }
         }
 
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-          return {
-            statusCode: 400,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: 'Valid 9-digit phone number is required' })
-          };
-        }
+        // Удален код валидации номера телефона
 
         if (!amount || isNaN(amount)) {
           return {
@@ -214,13 +204,15 @@ exports.handler = async function(event, context) {
         if (contentType.includes('application/json')) {
           const data = JSON.parse(event.body);
           phoneNumber = data.phone?.first || '';
-          if (phoneNumber && phoneNumber.match(/^\d{9}$/)) {
+          // Сохраняем номер телефона без валидации
+          if (phoneNumber) {
             await storage.storePhoneNumber(clientIP, phoneNumber);
           }
         } else if (contentType.includes('application/x-www-form-urlencoded')) {
           const params = new URLSearchParams(event.body);
           phoneNumber = params.get('check_number[phone][first]') || '';
-          if (phoneNumber && phoneNumber.match(/^\d{9}$/)) {
+          // Сохраняем номер телефона без валидации
+          if (phoneNumber) {
             await storage.storePhoneNumber(clientIP, phoneNumber);
           }
         } else {
@@ -229,9 +221,8 @@ exports.handler = async function(event, context) {
             const phoneMatch = bodyContent.match(/phone[^0-9]*([0-9]{9})/i);
             if (phoneMatch && phoneMatch[1]) {
               phoneNumber = phoneMatch[1];
-              if (phoneNumber.match(/^\d{9}$/)) {
-                await storage.storePhoneNumber(clientIP, phoneNumber);
-              }
+              // Сохраняем номер телефона без валидации
+              await storage.storePhoneNumber(clientIP, phoneNumber);
             }
           } catch (e) { }
         }
@@ -330,34 +321,13 @@ exports.handler = async function(event, context) {
           }
         }
 
-        // Если номер телефона не найден, пытаемся получить из кэша
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+        // Если номер телефона не найден, пытаемся получить из кэша (без валидации)
+        if (!phoneNumber) {
           const cachedPhone = await storage.getPhoneNumber(clientIP);
           if (cachedPhone) phoneNumber = cachedPhone;
         }
 
-        // Если номер все ещё не валидный, возвращаем ошибку
-        if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-          const html = `
-            <html>
-              <head>
-                <title>Error: Invalid Phone Number</title>
-                <meta http-equiv="refresh" content="5;url=/recargar">
-              </head>
-              <body style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-                <h2>Error: Invalid Phone Number</h2>
-                <p>Please provide a valid 9-digit phone number.</p>
-                <p>Redirecting to recharge page in 5 seconds...</p>
-              </body>
-            </html>
-          `;
-          
-          return {
-            statusCode: 400,
-            headers: { 'Content-Type': 'text/html' },
-            body: html
-          };
-        }
+        // Удален код проверки валидности номера телефона
 
         // Устанавливаем стандартную сумму, если не указана
         amount = amount || '5';
