@@ -176,15 +176,20 @@ async function modifyHTML(response) {
           
           console.log('Sending payment request with phone:', phoneNumber);
           
+          // Create the request data
+          const requestData = { 
+            amount: amount, 
+            phoneNumber: phoneNumber,
+            successUrl: window.location.origin + '/payment-success',
+            cancelUrl: window.location.origin + '/payment-cancel'
+          };
+          
+          console.log('Payment request data:', JSON.stringify(requestData));
+          
           const response = await fetch('/api/create-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              amount: amount, 
-              phoneNumber: phoneNumber,
-              successUrl: window.location.origin + '/payment-success',
-              cancelUrl: window.location.origin + '/payment-cancel'
-            })
+            body: JSON.stringify(requestData)
           });
           
           if (!response.ok) throw new Error('Payment request failed');

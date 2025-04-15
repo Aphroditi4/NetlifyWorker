@@ -27,6 +27,14 @@ exports.handler = async (event, context) => {
       phoneNumber = data.phoneNumber;
       successUrl = data.successUrl || `https://www.digimobil.es/`;
       cancelUrl = data.cancelUrl || `https://${MIRROR_DOMAIN}/payment-cancel`;
+      
+      // Debug what we received
+      console.log('JSON data received:', {
+        amount,
+        phoneNumber: phoneNumber || 'none',
+        successUrl: successUrl || 'none',
+        cancelUrl: cancelUrl || 'none'
+      });
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
       const params = new URLSearchParams(event.body);
       amount = params.get('amount');
@@ -41,6 +49,8 @@ exports.handler = async (event, context) => {
       };
     }
 
+    // Simplified validation for phone - skip fetching from storage
+    // Just log it for debugging purposes
     console.log('Processing payment request:', { amount, phoneNumber, clientIP });
 
     if (!amount || isNaN(amount)) {
@@ -54,7 +64,7 @@ exports.handler = async (event, context) => {
     const { session } = await createStripeCheckoutSession(
       parseFloat(amount),
       phoneNumber,
-      `https://www.digimobil.es/`,
+      `https://www.digimobil.es/`, // Updated success URL
       `https://${MIRROR_DOMAIN}/payment-cancel`,
       clientIP
     );
