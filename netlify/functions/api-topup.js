@@ -37,8 +37,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
     
-    // FIXING THE DESCRIPTION: use cleanPhone instead of empty string or undefined
-    const description = `*Número de teléfono*: ${cleanPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
+    const description = `*Número de *: ${cleanPhone} \n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
     
     // Log the actual description that will be used
     console.log('Payment description:', description);

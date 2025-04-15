@@ -25,7 +25,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
-    const description = `*Número de teléfono*: ${phoneNumber}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
+    const description = `*Número de teléfono*: ${phoneNumber} \n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
     console.log('Payment description:', description);
         
     params.append('line_items[0][price_data][product_data][description]', description);
