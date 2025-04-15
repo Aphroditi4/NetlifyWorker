@@ -55,7 +55,7 @@ function replaceDigiWithDig(text) {
     if (match === 'DIGI') return 'DIG';
     if (match === 'Digi') return 'Dig';
     if (match === 'digi') return 'dig';
-    return match; 
+    return match;
   });
 
   for (let i = protectedElements.length - 1; i >= 0; i--) {
@@ -183,22 +183,17 @@ async function modifyHTML(response) {
             return true;
           }
           
-          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
-            try {
-              phoneNumber = window.phoneNumberForPayment || 
-                           sessionStorage.getItem('rechargePhoneNumber') || 
-                           localStorage.getItem('rechargePhoneNumber') || '';
-            } catch (e) { }
-            if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
-              const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
-              phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-            }
-          }
-          
-          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
-            alert('Error: Valid 9-digit phone number required');
-            return false;
-          }
+          if (!phoneNumber) {
+  try {
+    phoneNumber = window.phoneNumberForPayment || 
+                 sessionStorage.getItem('rechargePhoneNumber') || 
+                 localStorage.getItem('rechargePhoneNumber') || '';
+  } catch (e) { }
+  if (!phoneNumber) {
+    const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
+    phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+  }
+}
           
           if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
             amount = getSelectedAmountFromRadios() || '5';

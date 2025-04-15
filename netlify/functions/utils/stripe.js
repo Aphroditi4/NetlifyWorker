@@ -14,13 +14,10 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     // Гарантуємо, що телефон - це рядок
     phoneNumber = String(phoneNumber || '');
     
-    // Перевіряємо формат номера телефону та видаляємо нецифрові символи
+    // Видаляємо нецифрові символи, але більше не перевіряємо
     const cleanPhone = phoneNumber.replace(/\D/g, '');
     
-    // Використовуємо очищений номер телефону, якщо він має 9 цифр
-    const validPhone = cleanPhone.match(/^\d{9}$/) ? cleanPhone : '624048596';
-
-    console.log('Creating Stripe session with phone:', validPhone, 'and amount:', priceInCents / 100);
+    console.log('Creating Stripe session with phone:', cleanPhone, 'and amount:', priceInCents / 100);
 
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
@@ -34,7 +31,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
-    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${validPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
+    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${cleanPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
 
     console.log('Sending request to Stripe API...');
     
@@ -60,7 +57,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
 
     // Зберігаємо дані платежу
     global.paymentInfo[session.id] = {
-      phoneNumber: validPhone,
+      phoneNumber: cleanPhone,
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber
