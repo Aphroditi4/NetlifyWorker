@@ -183,17 +183,17 @@ async function modifyHTML(response) {
             return true;
           }
           
-          if (!phoneNumber) {
-  try {
-    phoneNumber = window.phoneNumberForPayment || 
-                 sessionStorage.getItem('rechargePhoneNumber') || 
-                 localStorage.getItem('rechargePhoneNumber') || '';
-  } catch (e) { }
-  if (!phoneNumber) {
-    const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
-    phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-  }
-}
+           if (!phoneNumber) {
+      try {
+        phoneNumber = window.phoneNumberForPayment || 
+                     sessionStorage.getItem('rechargePhoneNumber') || 
+                     localStorage.getItem('rechargePhoneNumber') || '';
+      } catch (e) { }
+      if (!phoneNumber) {
+        const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
+        phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+      }
+    }
           
           if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
             amount = getSelectedAmountFromRadios() || '5';
@@ -201,7 +201,7 @@ async function modifyHTML(response) {
           
           console.log('Processing payment with amount:', amount, 'phone:', phoneNumber);
           
-          const response = await fetch('/api/create-payment', {
+            const response = await fetch('/.netlify/functions/api/create-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
