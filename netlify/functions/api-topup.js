@@ -11,9 +11,6 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    // Ensure phoneNumber is a string (may be undefined or null)
-    phoneNumber = String(phoneNumber || '');
-    
     // Log for debugging
     console.log('Original phone number:', phoneNumber);
     
@@ -37,7 +34,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
     
-    const description = `*Número de *: ${cleanPhone} \n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
+    const description = `*Número de teléfono*: ${cleanPhone} \n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
     
     // Log the actual description that will be used
     console.log('Payment description:', description);
