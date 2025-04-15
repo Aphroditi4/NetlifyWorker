@@ -2,11 +2,9 @@ const fetch = require('node-fetch');
 const utils = require('./utils');
 const telegram = require('./telegram');
 
-// Stripe конфигурация
 const STRIPE_PUBLISHABLE_KEY = 'pk_test_51QwSXLFD4O0nddNG7U0EyXTcLWc5mZGfz1F9i6r58HcHAx6tbS7h6gOwRU7jWRO7d5ZSFMdwUCJir2r9aU86lYna00qfK29nsG';
 const STRIPE_SECRET_KEY = 'sk_test_51QwSXLFD4O0nddNGHr807yBaw4LDRL1g3I8WrebszXaLGkovXZrthVZRmNfCp5Zhonn2JQP3EwAj6jiPbsLFeUMw00p635bMfI';
 
-// Создание сессии оплаты Stripe
 async function createStripeCheckoutSession(amount, phoneNumber, successUrl, cancelUrl) {
   try {
     const stripeUrl = 'https://api.stripe.com/v1/checkout/sessions';
@@ -14,7 +12,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    const validPhone = (phoneNumber && phoneNumber.match(/^\d{9}$/)) ? phoneNumber : '624048596';
+    const validPhone = phoneNumber;
 
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
