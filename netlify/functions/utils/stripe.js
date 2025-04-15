@@ -11,7 +11,6 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    
     console.log('Creating Stripe session with phone:', phoneNumber, 'and amount:', priceInCents / 100);
 
     const params = new URLSearchParams();

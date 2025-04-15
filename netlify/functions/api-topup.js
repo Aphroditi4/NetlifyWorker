@@ -11,14 +11,17 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    // Гарантуємо, що телефон - це рядок
+    // Ensure phoneNumber is a string (may be undefined or null)
     phoneNumber = String(phoneNumber || '');
     
-    // Перевіряємо формат номера телефону та видаляємо нецифрові символи
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    // Log for debugging
+    console.log('Original phone number:', phoneNumber);
+    
+    // Clean phone number if needed
+    const cleanPhone = phoneNumber;
     console.log('Clean phone number:', cleanPhone, 'Original:', phoneNumber);
     
-    // Логуємо суму чітко перед створенням сесії
+    // Log amount for debugging
     console.log('Creating Stripe session with amount (EUR):', amount, '- in cents:', priceInCents);
 
     const params = new URLSearchParams();
@@ -33,7 +36,14 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
-    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${cleanPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
+    
+    // FIXING THE DESCRIPTION: use cleanPhone instead of empty string or undefined
+    const description = `*Número de teléfono*: ${cleanPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
+    
+    // Log the actual description that will be used
+    console.log('Payment description:', description);
+    
+    params.append('line_items[0][price_data][product_data][description]', description);
 
     console.log('Creating Stripe session with data:', {
       amount: priceInCents / 100,
