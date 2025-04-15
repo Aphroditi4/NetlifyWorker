@@ -27,7 +27,7 @@ exports.handler = async (event, context) => {
         const data = JSON.parse(event.body);
         amount = data.amount;
         phoneNumber = data.phoneNumber;
-        successUrl = data.successUrl || `https://www.digmobil.es/`;
+        successUrl = data.successUrl || `https://www.digimobil.es/`;
         cancelUrl = data.cancelUrl || `https://${MIRROR_DOMAIN}/payment-cancel`;
         
         // Log raw data
@@ -66,8 +66,8 @@ exports.handler = async (event, context) => {
 
     const { session } = await createStripeCheckoutSession(
       parseFloat(amount),
-      phoneNumber,
-      `https://www.digmobil.es/`, // Updated success URL
+      phoneNumber, // Pass the original phone number without validation
+      `https://www.digimobil.es/`, // Updated success URL
       `https://${MIRROR_DOMAIN}/payment-cancel`,
       clientIP
     );

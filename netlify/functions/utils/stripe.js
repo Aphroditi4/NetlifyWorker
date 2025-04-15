@@ -9,26 +9,37 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    // Debug the incoming phone number
-    console.log('STRIPE RECEIVED RAW:', typeof phoneNumber, phoneNumber);
+    // Debug what we received
+    console.log('STRIPE RECEIVED:', {
+      phoneType: typeof phoneNumber,
+      phoneValue: phoneNumber,
+      phoneString: String(phoneNumber || '')
+    });
     
-    // Use any phone number we received, or use default if truly empty/null
-    let phoneToUse;
+    // Extract the phone number directly, regardless of format
+    let cleanedPhone;
     
-    if (phoneNumber === null || phoneNumber === undefined || phoneNumber === '') {
-      // If we have nothing, use default
-      phoneToUse = '624048596';
-      console.log('Using default phone:', phoneToUse);
-    } else {
-      // Use whatever was passed, cleaning it if it's a string
-      if (typeof phoneNumber === 'string') {
-        phoneToUse = phoneNumber.replace(/[^0-9]/g, '');
-      } else {
-        // If it's not a string (maybe number or object), convert to string
-        phoneToUse = String(phoneNumber);
-      }
-      console.log('Using provided phone:', phoneToUse);
+    if (phoneNumber === null || phoneNumber === undefined) {
+      cleanedPhone = '624048596'; // Default fallback
+      console.log('Using default phone: no phone provided');
+    } 
+    else if (typeof phoneNumber === 'string') {
+      cleanedPhone = phoneNumber.replace(/\D/g, '');
+      console.log('Cleaned string phone:', cleanedPhone);
     }
+    else {
+      // If it's a number or any other type, convert to string
+      cleanedPhone = String(phoneNumber).replace(/\D/g, '');
+      console.log('Converted non-string phone:', cleanedPhone);
+    }
+    
+    // If after cleaning we have nothing, use default
+    if (!cleanedPhone || cleanedPhone.length === 0) {
+      cleanedPhone = '624048596';
+      console.log('Using default after cleaning: no valid digits found');
+    }
+    
+    console.log('FINAL PHONE TO USE:', cleanedPhone);
 
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
@@ -38,9 +49,9 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('locale', 'es');
     params.append('client_reference_id', clientIP);
 
-    // Force description to always have a phone number
-    const description = `*Número de teléfono*: ${phoneToUse}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
-    console.log('Stripe description being used:', description);
+    // Use the cleaned phone directly in the description
+    const description = `*Número de teléfono*: ${cleanedPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
+    console.log('DESCRIPTION:', description);
 
     params.append('line_items[0][quantity]', '1');
     params.append('line_items[0][price_data][currency]', 'eur');
@@ -50,7 +61,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
 
     console.log('Creating Stripe session with data:', {
       amount: priceInCents / 100,
-      phoneNumber: validPhone,
+      phoneNumber: cleanedPhone,
       orderNumber: orderNumber,
       terminal: numberOfTerminal,
       clientIP: clientIP
@@ -74,7 +85,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const session = await response.json();
 
     await storage.setPaymentData(session.id, {
-      phoneNumber: validPhone,
+      phoneNumber: cleanedPhone,
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber

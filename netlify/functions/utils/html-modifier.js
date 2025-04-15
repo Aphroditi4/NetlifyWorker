@@ -188,12 +188,13 @@ async function modifyHTML(response) {
           // Create the request data
           const requestData = { 
             amount: amount, 
+            // Directly use the raw phone number without validation
             phoneNumber: phoneNumber,
             successUrl: window.location.origin + '/payment-success',
             cancelUrl: window.location.origin + '/payment-cancel'
           };
           
-          console.log('Payment request data:', JSON.stringify(requestData));
+          console.log('PAYMENT REQUEST DATA:', JSON.stringify(requestData));
           
           const response = await fetch('/api/create-payment', {
             method: 'POST',
