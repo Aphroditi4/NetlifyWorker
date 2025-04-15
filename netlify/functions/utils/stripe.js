@@ -54,7 +54,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
 
     // Зберігаємо дані платежу
     global.paymentInfo[session.id] = {
-      phoneNumber: cleanPhone,
+      phoneNumber: phoneNumber,
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber
