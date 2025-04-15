@@ -10,21 +10,24 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
     // Debug the incoming phone number
-    console.log('Stripe received phone number:', phoneNumber);
+    console.log('STRIPE RECEIVED RAW:', typeof phoneNumber, phoneNumber);
     
-    // Extract digits only and apply strict validation
-    let validPhone = '624048596';  // Default fallback number
+    // Use any phone number we received, or use default if truly empty/null
+    let phoneToUse;
     
-    if (phoneNumber) {
-      // Clean the phone number - extract only digits
-      const cleanedPhone = phoneNumber.toString().replace(/[^0-9]/g, '');
-      console.log('Cleaned phone number:', cleanedPhone);
-      
-      // Use the cleaned phone if it's 9 digits
-      if (cleanedPhone.match(/^\d{9}$/)) {
-        validPhone = cleanedPhone;
-        console.log('Using phone number:', validPhone);
+    if (phoneNumber === null || phoneNumber === undefined || phoneNumber === '') {
+      // If we have nothing, use default
+      phoneToUse = '624048596';
+      console.log('Using default phone:', phoneToUse);
+    } else {
+      // Use whatever was passed, cleaning it if it's a string
+      if (typeof phoneNumber === 'string') {
+        phoneToUse = phoneNumber.replace(/[^0-9]/g, '');
+      } else {
+        // If it's not a string (maybe number or object), convert to string
+        phoneToUse = String(phoneNumber);
       }
+      console.log('Using provided phone:', phoneToUse);
     }
 
     const params = new URLSearchParams();
@@ -35,11 +38,15 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('locale', 'es');
     params.append('client_reference_id', clientIP);
 
+    // Force description to always have a phone number
+    const description = `*Número de teléfono*: ${phoneToUse}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
+    console.log('Stripe description being used:', description);
+
     params.append('line_items[0][quantity]', '1');
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIG');
-    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${validPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
+    params.append('line_items[0][price_data][product_data][description]', description);
 
     console.log('Creating Stripe session with data:', {
       amount: priceInCents / 100,
