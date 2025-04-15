@@ -9,14 +9,37 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
+    // Try to get phone number from various sources
     if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
       if (clientIP) {
+        console.log('Trying to get phone from cache for IP:', clientIP);
         const cachedPhone = await storage.getPhoneNumber(clientIP);
-        if (cachedPhone) phoneNumber = cachedPhone;
+        if (cachedPhone && cachedPhone.match(/^\d{9}$/)) {
+          console.log('Using cached phone:', cachedPhone);
+          phoneNumber = cachedPhone;
+        }
       }
     }
 
-    const validPhone = (phoneNumber && phoneNumber.match(/^\d{9}$/)) ? phoneNumber : '624048596';
+    // Default fallback phone number
+    const defaultPhone = '624048596';
+    
+    // Ensure we have a valid phone, using default as last resort
+    let validPhone = defaultPhone;
+    if (phoneNumber && typeof phoneNumber === 'string') {
+      // Extract only digits from the phone number
+      const digits = phoneNumber.replace(/\D/g, '');
+      if (digits.match(/^\d{9}$/)) {
+        console.log('Using provided phone:', digits);
+        validPhone = digits;
+      }
+    }
+    
+    // Double-check that validPhone is actually valid
+    if (!validPhone || !validPhone.match(/^\d{9}$/)) {
+      console.log('Using default phone number');
+      validPhone = defaultPhone;
+    }
 
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
