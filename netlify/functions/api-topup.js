@@ -18,10 +18,6 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const cleanPhone = phoneNumber.replace(/\D/g, '');
     console.log('Clean phone number:', cleanPhone, 'Original:', phoneNumber);
     
-    // Використовуємо очищений номер телефону, якщо він має 9 цифр
-    const validPhone = cleanPhone.match(/^\d{9}$/) ? cleanPhone : '624048596';
-    console.log('Valid phone to use:', validPhone);
-
     // Логуємо суму чітко перед створенням сесії
     console.log('Creating Stripe session with amount (EUR):', amount, '- in cents:', priceInCents);
 
@@ -37,11 +33,11 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
-    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${validPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
+    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${cleanPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
 
     console.log('Creating Stripe session with data:', {
       amount: priceInCents / 100,
-      phoneNumber: validPhone,
+      phoneNumber: cleanPhone,
       orderNumber: orderNumber,
       terminal: numberOfTerminal,
       clientIP: clientIP
@@ -66,7 +62,7 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
 
     // Зберігаємо дані платежу
     global.paymentData[session.id] = {
-      phoneNumber: validPhone,
+      phoneNumber: cleanPhone,
       terminal: numberOfTerminal,
       amount: priceInCents / 100,
       orderNumber: orderNumber
@@ -204,14 +200,7 @@ exports.handler = async (event, context) => {
       console.log('Phone after cleaning:', phoneNumber);
     }
 
-    // Перевіряємо дійсність номера телефону
-    if (!phoneNumber || !phoneNumber.match(/^\d{9}$/)) {
-      console.error('Invalid phone number:', phoneNumber);
-      
-      // Замість помилки, можна використовувати тестовий номер для відлагодження
-      phoneNumber = '624048596'; // тестовий номер для відлагодження
-      console.log('Using test phone number instead:', phoneNumber);
-    }
+    // Видаляємо валідацію номера телефону
 
     // Встановлюємо стандартне значення для суми
     if (!amount) {
