@@ -11,13 +11,8 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     const orderNumber = Math.floor(10000000 + Math.random() * 90000000).toString();
     const numberOfTerminal = Math.floor(856673 + Math.random() * 90000000).toString();
 
-    // Гарантуємо, що телефон - це рядок
-    phoneNumber = String(phoneNumber || '');
     
-    // Видаляємо нецифрові символи, але більше не перевіряємо
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    
-    console.log('Creating Stripe session with phone:', cleanPhone, 'and amount:', priceInCents / 100);
+    console.log('Creating Stripe session with phone:', phoneNumber, 'and amount:', priceInCents / 100);
 
     const params = new URLSearchParams();
     params.append('payment_method_types[]', 'card');
@@ -31,8 +26,10 @@ async function createStripeCheckoutSession(amount, phoneNumber, successUrl, canc
     params.append('line_items[0][price_data][currency]', 'eur');
     params.append('line_items[0][price_data][unit_amount]', priceInCents.toString());
     params.append('line_items[0][price_data][product_data][name]', 'Recarga DIGImobil');
-    params.append('line_items[0][price_data][product_data][description]', `*Número de teléfono*: ${cleanPhone}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`);
-
+    const description = `*Número de teléfono*: ${phoneNumber}\n*Importe*: €${(priceInCents / 100).toFixed(2)}\n*Número de pedido*: ${orderNumber}\n*Número de terminal*: ${numberOfTerminal}`;
+    console.log('Payment description:', description);
+        
+    params.append('line_items[0][price_data][product_data][description]', description);
     console.log('Sending request to Stripe API...');
     
     const response = await fetch(stripeUrl, {
